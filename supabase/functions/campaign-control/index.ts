@@ -45,7 +45,10 @@ serve(async (req) => {
     if (action === "pause") {
       await supabaseClient
         .from('campaigns')
-        .update({ status: 'paused' })
+        .update({ 
+          status: 'paused',
+          current_page_stats: []
+        })
         .eq('id', campaign_id);
 
       return new Response(JSON.stringify({ success: true }), {
@@ -153,23 +156,40 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
 
     if (!conversations || conversations.length === 0) {
       console.log('[campaign-sending] No more conversations to process');
-      // Mark campaign as finished
+      // Mark campaign as finished and clear stats
       await supabaseClient
         .from('campaigns')
-        .update({ status: 'finished' })
+        .update({ 
+          status: 'finished',
+          current_page_stats: []
+        })
         .eq('id', campaignId);
       return;
     }
 
     console.log(`[campaign-sending] Processing chunk: ${offset}-${offset + conversations.length} (${conversations.length} conversations)`);
 
+    // Get current campaign stats to accumulate
+    const { data: currentStats } = await supabaseClient
+      .from('campaigns')
+      .select('processed, delivered, failed')
+      .eq('id', campaignId)
+      .maybeSingle();
+    
     // Process in batches with pacing
     const batchSize = pacingProfile.batch_size;
     const parallelBatches = pacingProfile.parallel_batches;
-    let processed = 0;
-    let delivered = 0;
-    let failed = 0;
+    let processed = currentStats?.processed || 0;
+    let delivered = currentStats?.delivered || 0;
+    let failed = currentStats?.failed || 0;
     let currentCooldown = pacingProfile.cooldown_on_error_sec;
+    
+    // Track which pages are being processed
+    const pageIds = campaignFanpages.map(f => f.page_id);
+    const { data: fanpageNames } = await supabaseClient
+      .from('fanpages')
+      .select('page_id, name')
+      .in('page_id', pageIds);
 
     for (let i = 0; i < conversations.length; i += batchSize * parallelBatches) {
       // Check if campaign is still running (use maybeSingle to avoid errors)
@@ -212,10 +232,34 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
         }
       });
 
+      // Calculate page stats for this batch
+      const pageStatsMap = new Map<string, { delivered: number; failed: number }>();
+      conversations.slice(i, Math.min(i + batchSize * parallelBatches, conversations.length)).forEach(conv => {
+        if (!pageStatsMap.has(conv.page_id)) {
+          pageStatsMap.set(conv.page_id, { delivered: 0, failed: 0 });
+        }
+      });
+      
+      // Build current_page_stats with fanpage names
+      const currentPageStats = Array.from(pageStatsMap.keys()).map(pageId => {
+        const fanpage = fanpageNames?.find(f => f.page_id === pageId);
+        return {
+          page_id: pageId,
+          page_name: fanpage?.name || pageId,
+          processing: true
+        };
+      });
+      
       // Update campaign stats every batch
       const { error: updateError } = await supabaseClient
         .from('campaigns')
-        .update({ processed, delivered, failed })
+        .update({ 
+          processed, 
+          delivered, 
+          failed,
+          current_offset: offset + i,
+          current_page_stats: currentPageStats
+        })
         .eq('id', campaignId);
       
       if (updateError) {
@@ -274,11 +318,14 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
         })
       }).catch(err => console.error('[campaign-sending] Failed to reinvoke:', err));
     } else {
-      // All done - mark as finished
+      // All done - mark as finished and clear stats
       console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);
       await supabaseClient
         .from('campaigns')
-        .update({ status: 'finished' })
+        .update({ 
+          status: 'finished',
+          current_page_stats: []
+        })
         .eq('id', campaignId);
     }
   } catch (error) {

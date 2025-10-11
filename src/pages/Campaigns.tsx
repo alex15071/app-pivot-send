@@ -21,6 +21,12 @@ interface Campaign {
   delivered: number;
   failed: number;
   created_at: string;
+  current_offset?: number;
+  current_page_stats?: Array<{
+    page_id: string;
+    page_name: string;
+    processing: boolean;
+  }>;
 }
 
 const Campaigns = () => {
@@ -37,7 +43,10 @@ const Campaigns = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Campaign[];
+      return (data || []).map(campaign => ({
+        ...campaign,
+        current_page_stats: campaign.current_page_stats as Campaign['current_page_stats']
+      })) as Campaign[];
     },
     refetchInterval: 5000, // Real-time updates every 5s
   });
@@ -339,6 +348,22 @@ const Campaigns = () => {
                       <div className="text-muted-foreground">Failed</div>
                     </div>
                   </div>
+                  
+                  {campaign.status === 'running' && campaign.current_page_stats && campaign.current_page_stats.length > 0 && (
+                    <div className="pt-4 border-t">
+                      <div className="text-sm font-medium mb-2">Currently Processing:</div>
+                      <div className="flex flex-wrap gap-2">
+                        {campaign.current_page_stats.map((page, idx) => (
+                          <Badge key={idx} variant="outline" className="animate-pulse">
+                            📄 {page.page_name}
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-2">
+                        Offset: {campaign.current_offset?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

@@ -122,6 +122,8 @@ export type Database = {
         Row: {
           active_app_key: string | null
           created_at: string | null
+          current_offset: number | null
+          current_page_stats: Json | null
           delivered: number | null
           failed: number | null
           id: string
@@ -135,6 +137,8 @@ export type Database = {
         Insert: {
           active_app_key?: string | null
           created_at?: string | null
+          current_offset?: number | null
+          current_page_stats?: Json | null
           delivered?: number | null
           failed?: number | null
           id?: string
@@ -148,6 +152,8 @@ export type Database = {
         Update: {
           active_app_key?: string | null
           created_at?: string | null
+          current_offset?: number | null
+          current_page_stats?: Json | null
           delivered?: number | null
           failed?: number | null
           id?: string
