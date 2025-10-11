@@ -78,20 +78,28 @@ serve(async (req) => {
                   console.log('[webhook] New conversation saved');
                   
                   // Update conversation count for all fanpages with this page_id
-                  const { data: countData } = await supabaseClient
+                  const { count, error: countError } = await supabaseClient
                     .from('fanpage_conversations')
                     .select('*', { count: 'exact', head: true })
                     .eq('page_id', pageId);
                   
-                  const count = countData ? (countData as any).count : 0;
+                  if (countError) {
+                    console.error('[webhook] Error counting conversations:', countError);
+                  }
+                  
+                  const conversationCount = count || 0;
                   
                   // Update all fanpages with this page_id (they might be connected to different apps)
-                  await supabaseClient
+                  const { error: updateError } = await supabaseClient
                     .from('fanpages')
-                    .update({ conversations: count })
+                    .update({ conversations: conversationCount })
                     .eq('page_id', pageId);
                   
-                  console.log(`[webhook] Updated fanpage ${pageId} count to ${count}`);
+                  if (updateError) {
+                    console.error('[webhook] Error updating fanpage:', updateError);
+                  } else {
+                    console.log(`[webhook] Updated fanpage ${pageId} count to ${conversationCount}`);
+                  }
                 }
               }
             }
