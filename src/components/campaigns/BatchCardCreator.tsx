@@ -8,8 +8,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Trash2, CalendarIcon, Copy } from "lucide-react";
+import { Plus, Trash2, CalendarIcon, Copy, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,14 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       app_key: "",
     },
   ]);
+
+  // Bulk creation states
+  const [bulkTitles, setBulkTitles] = useState("");
+  const [bulkSubtitles, setBulkSubtitles] = useState("");
+  const [bulkImageUrls, setBulkImageUrls] = useState("");
+  const [bulkButtonTitles, setBulkButtonTitles] = useState("");
+  const [bulkButtonUrls, setBulkButtonUrls] = useState("");
+  const [showBulkCreator, setShowBulkCreator] = useState(false);
 
   // Template values for "Apply to All"
   const [templateCard, setTemplateCard] = useState({
@@ -137,6 +146,51 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       }))
     );
     toast.success("Valores aplicados a todas las cards");
+  };
+
+  const setTimeToNow = () => {
+    const now = new Date();
+    setStartDate(now);
+    setStartTime(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
+    toast.success("Hora establecida a AHORA");
+  };
+
+  const generateCardsFromBulk = () => {
+    const titles = bulkTitles.split('\n').filter(t => t.trim());
+    const subtitles = bulkSubtitles.split('\n').filter(t => t.trim());
+    const imageUrls = bulkImageUrls.split('\n').filter(t => t.trim());
+    const buttonTitles = bulkButtonTitles.split('\n').filter(t => t.trim());
+    const buttonUrls = bulkButtonUrls.split('\n').filter(t => t.trim());
+
+    const maxLength = Math.max(titles.length, subtitles.length, imageUrls.length, buttonTitles.length, buttonUrls.length);
+
+    if (maxLength === 0) {
+      toast.error("Debes ingresar al menos un valor en algún campo");
+      return;
+    }
+
+    if (maxLength > 20) {
+      toast.error("Máximo 20 cards por campaña");
+      return;
+    }
+
+    const newCards: CardData[] = [];
+    for (let i = 0; i < maxLength; i++) {
+      newCards.push({
+        id: crypto.randomUUID(),
+        title: titles[i] || "",
+        subtitle: subtitles[i] || "",
+        image_url: imageUrls[i] || "",
+        button_title: buttonTitles[i] || "",
+        button_url: buttonUrls[i] || "",
+        delay_minutes: i === 0 ? 0 : 30,
+        app_key: "",
+      });
+    }
+
+    setCards(newCards);
+    toast.success(`${maxLength} cards creadas exitosamente`);
+    setShowBulkCreator(false);
   };
 
   const createBatchMutation = useMutation({
@@ -318,6 +372,80 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         />
       </div>
 
+      {/* Bulk Creator Section */}
+      <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-base font-semibold">Creación Masiva desde Texto</Label>
+          <Button size="sm" variant="outline" onClick={() => setShowBulkCreator(!showBulkCreator)}>
+            <FileText className="h-4 w-4 mr-1" />
+            {showBulkCreator ? "Ocultar" : "Mostrar"}
+          </Button>
+        </div>
+        
+        {showBulkCreator && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Ingresa múltiples valores (1 por línea) y genera cards automáticamente. Si algún campo tiene menos líneas, se dejarán vacías.
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs">TITULOS (1 por línea)</Label>
+                <Textarea
+                  value={bulkTitles}
+                  onChange={(e) => setBulkTitles(e.target.value)}
+                  placeholder="Título Card 1&#10;Título Card 2&#10;Título Card 3"
+                  rows={3}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">SUBTITULOS (1 por línea)</Label>
+                <Textarea
+                  value={bulkSubtitles}
+                  onChange={(e) => setBulkSubtitles(e.target.value)}
+                  placeholder="Subtítulo 1&#10;Subtítulo 2&#10;Subtítulo 3"
+                  rows={3}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">URLS DE LAS IMAGENES (1 por línea)</Label>
+                <Textarea
+                  value={bulkImageUrls}
+                  onChange={(e) => setBulkImageUrls(e.target.value)}
+                  placeholder="https://imagen1.jpg&#10;https://imagen2.jpg&#10;https://imagen3.jpg"
+                  rows={3}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">TEXTOS DEL BOTON (1 por línea)</Label>
+                <Textarea
+                  value={bulkButtonTitles}
+                  onChange={(e) => setBulkButtonTitles(e.target.value)}
+                  placeholder="Ver más&#10;Comprar ahora&#10;Saber más"
+                  rows={3}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">URL DEL BOTON (1 por línea)</Label>
+                <Textarea
+                  value={bulkButtonUrls}
+                  onChange={(e) => setBulkButtonUrls(e.target.value)}
+                  placeholder="https://enlace1.com&#10;https://enlace2.com&#10;https://enlace3.com"
+                  rows={3}
+                  className="font-mono text-xs"
+                />
+              </div>
+            </div>
+            <Button onClick={generateCardsFromBulk} className="w-full">
+              Generar Cards desde Texto
+            </Button>
+          </>
+        )}
+      </div>
+
       {/* Start Date/Time */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -335,7 +463,12 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           </Popover>
         </div>
         <div className="space-y-2">
-          <Label>Hora</Label>
+          <div className="flex items-center justify-between mb-1">
+            <Label>Hora</Label>
+            <Button size="sm" variant="ghost" onClick={setTimeToNow} className="h-6 text-xs">
+              NOW
+            </Button>
+          </div>
           <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
         </div>
       </div>
