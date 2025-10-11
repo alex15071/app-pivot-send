@@ -6,8 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Plus, Trash2, Copy } from "lucide-react";
+import { Plus, Trash2, CalendarIcon, Copy } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 interface CardData {
   id: string;
@@ -16,6 +20,8 @@ interface CardData {
   image_url: string;
   button_title: string;
   button_url: string;
+  delay_minutes: number;
+  app_key: string;
 }
 
 interface BatchCardCreatorProps {
@@ -26,9 +32,9 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
   const queryClient = useQueryClient();
   const [campaignName, setCampaignName] = useState("");
   const [selectedFanpages, setSelectedFanpages] = useState<string[]>([]);
-  const [selectedApp, setSelectedApp] = useState<string>("");
   const [selectedPacingProfile, setSelectedPacingProfile] = useState<string>("");
-  const [delayMinutes, setDelayMinutes] = useState<number>(0);
+  const [startDate, setStartDate] = useState<Date>();
+  const [startTime, setStartTime] = useState("09:00");
   const [cards, setCards] = useState<CardData[]>([
     {
       id: crypto.randomUUID(),
@@ -37,17 +43,19 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       image_url: "",
       button_title: "",
       button_url: "",
+      delay_minutes: 0,
+      app_key: "",
     },
   ]);
 
   // Template values for "Apply to All"
-  const [templateCard, setTemplateCard] = useState<CardData>({
-    id: "template",
+  const [templateCard, setTemplateCard] = useState({
     title: "",
     subtitle: "",
     image_url: "",
     button_title: "",
     button_url: "",
+    app_key: "",
   });
 
   // Fetch fanpages
@@ -88,6 +96,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       toast.error("Máximo 20 cards por campaña");
       return;
     }
+    const lastCard = cards[cards.length - 1];
     setCards([
       ...cards,
       {
@@ -97,6 +106,8 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         image_url: "",
         button_title: "",
         button_url: "",
+        delay_minutes: 30, // 30 minutes default
+        app_key: "",
       },
     ]);
   };
@@ -109,7 +120,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
     setCards(cards.filter((c) => c.id !== id));
   };
 
-  const updateCard = (id: string, field: keyof CardData, value: string) => {
+  const updateCard = (id: string, field: keyof CardData, value: string | number) => {
     setCards(cards.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
   };
 
@@ -122,6 +133,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         image_url: templateCard.image_url || c.image_url,
         button_title: templateCard.button_title || c.button_title,
         button_url: templateCard.button_url || c.button_url,
+        app_key: templateCard.app_key || c.app_key,
       }))
     );
     toast.success("Valores aplicados a todas las cards");
@@ -135,6 +147,9 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       }
       if (selectedFanpages.length === 0) {
         throw new Error("Selecciona al menos 1 fanpage");
+      }
+      if (!startDate) {
+        throw new Error("Selecciona fecha de inicio");
       }
       for (const card of cards) {
         if (!card.title.trim()) {
@@ -151,20 +166,18 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         }
       }
 
-      // Calculate scheduled_at if delay is set
-      let scheduledAt = null;
-      if (delayMinutes > 0) {
-        scheduledAt = new Date();
-        scheduledAt.setMinutes(scheduledAt.getMinutes() + delayMinutes);
-      }
+      const [hours, minutes] = startTime.split(':').map(Number);
+      const startDateTime = new Date(startDate);
+      startDateTime.setHours(hours, minutes, 0, 0);
 
-      // Create campaign
+      // Create campaign as sequence
       const { data: campaign, error: campaignError } = await supabase
         .from("campaigns")
         .insert({
           name: campaignName.trim(),
-          status: delayMinutes > 0 ? "scheduled" : "draft",
-          active_app_key: selectedApp || null,
+          status: "scheduled",
+          is_sequence: true,
+          sequence_start_at: startDateTime.toISOString(),
           pacing_profile_id: selectedPacingProfile || null,
           total_recipients: 0,
           processed: 0,
@@ -191,58 +204,97 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         throw linkError;
       }
 
-      // Build message with multiple cards
-      const elements = cards.map((card) => ({
-        title: card.title.trim(),
-        subtitle: card.subtitle.trim(),
-        image_url: card.image_url.trim(),
-        default_action: {
-          type: "web_url",
-          url: card.button_url.trim(),
-        },
-        buttons: [
-          {
-            type: "web_url",
-            url: card.button_url.trim(),
-            title: card.button_title.trim(),
-          },
-        ],
-      }));
+      // Calculate scheduled_for times for each card
+      let cumulativeMinutes = 0;
+      const sequenceMessages = cards.map((card, idx) => {
+        const scheduledFor = new Date(startDateTime);
+        scheduledFor.setMinutes(scheduledFor.getMinutes() + cumulativeMinutes);
+        
+        if (idx < cards.length - 1) {
+          cumulativeMinutes += cards[idx + 1].delay_minutes;
+        }
 
-      const messageArgs = {
-        attachment: {
-          type: "template",
-          payload: {
-            template_type: "generic",
-            elements,
+        // Build card message
+        const messageArgs = {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "generic",
+              elements: [{
+                title: card.title.trim(),
+                subtitle: card.subtitle.trim(),
+                image_url: card.image_url.trim(),
+                default_action: {
+                  type: "web_url",
+                  url: card.button_url.trim(),
+                },
+                buttons: [{
+                  type: "web_url",
+                  url: card.button_url.trim(),
+                  title: card.button_title.trim(),
+                }],
+              }],
+            },
           },
-        },
-      };
+        };
 
-      const { error: messageError } = await supabase
-        .from("messages")
-        .insert({
+        return {
           campaign_id: campaign.id,
-          type: "generic",
-          arguments: messageArgs as any,
-          sent: 0,
-        });
+          message_type: "generic",
+          message_arguments: messageArgs,
+          delay_minutes: card.delay_minutes,
+          sequence_order: idx + 1,
+          scheduled_for: scheduledFor.toISOString(),
+          status: 'scheduled',
+        };
+      });
 
-      if (messageError) {
+      // Insert all sequence messages
+      const { error: insertError } = await supabase
+        .from('message_sequences')
+        .insert(sequenceMessages);
+
+      if (insertError) {
         await supabase.from("campaign_fanpages").delete().eq("campaign_id", campaign.id);
         await supabase.from("campaigns").delete().eq("id", campaign.id);
-        throw messageError;
+        throw insertError;
       }
     },
     onSuccess: () => {
-      toast.success("Campaña de cards creada exitosamente");
+      toast.success("Secuencia de cards creada exitosamente");
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       onClose();
     },
     onError: (error: any) => {
-      toast.error(error.message || "Error al crear campaña");
+      toast.error(error.message || "Error al crear secuencia");
     },
   });
+
+  const calculateTimeline = () => {
+    if (!startDate) return [];
+
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const startDateTime = new Date(startDate);
+    startDateTime.setHours(hours, minutes, 0, 0);
+
+    let cumulativeMinutes = 0;
+    return cards.map((card, idx) => {
+      const scheduledFor = new Date(startDateTime);
+      scheduledFor.setMinutes(scheduledFor.getMinutes() + cumulativeMinutes);
+      
+      if (idx < cards.length - 1) {
+        cumulativeMinutes += cards[idx + 1].delay_minutes;
+      }
+
+      return {
+        order: idx + 1,
+        time: scheduledFor,
+        title: card.title || `Card ${idx + 1}`,
+      };
+    });
+  };
+
+  const timeline = calculateTimeline();
 
   const toggleFanpage = (pageId: string) => {
     setSelectedFanpages((prev) =>
@@ -265,6 +317,43 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           placeholder="ej: Promoción Verano 2025"
         />
       </div>
+
+      {/* Start Date/Time */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Fecha de Inicio</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {startDate ? format(startDate, "PPP") : "Seleccionar fecha"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar mode="single" selected={startDate} onSelect={setStartDate} initialFocus />
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div className="space-y-2">
+          <Label>Hora</Label>
+          <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        </div>
+      </div>
+
+      {/* Timeline Preview */}
+      {timeline.length > 0 && (
+        <div className="border rounded-lg p-4 space-y-2 bg-muted/30">
+          <h4 className="font-medium text-sm">Timeline de Envío</h4>
+          <div className="space-y-1 text-xs max-h-[200px] overflow-y-auto">
+            {timeline.map((t, idx) => (
+              <div key={idx} className="flex justify-between">
+                <span>{t.title}</span>
+                <span className="text-muted-foreground">{format(t.time, "PPP p")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Fanpage Selection */}
       <div className="space-y-2">
@@ -290,62 +379,22 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         </div>
       </div>
 
-      {/* App & Pacing Profile */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>App</Label>
-          <Select value={selectedApp || "default"} onValueChange={(v) => setSelectedApp(v === "default" ? "" : v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Usar app por defecto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Usar app por defecto</SelectItem>
-              {apps.map((app) => (
-                <SelectItem key={app.key} value={app.key}>
-                  {app.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Pacing Profile</Label>
-          <Select value={selectedPacingProfile || "default"} onValueChange={(v) => setSelectedPacingProfile(v === "default" ? "" : v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Usar perfil por defecto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Usar perfil por defecto</SelectItem>
-              {pacingProfiles.map((profile) => (
-                <SelectItem key={profile.id} value={profile.id}>
-                  {profile.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Delay Minutes */}
+      {/* Pacing Profile */}
       <div className="space-y-2">
-        <Label>Programar envío (minutos desde ahora)</Label>
-        <Input
-          type="number"
-          min="0"
-          value={delayMinutes}
-          onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
-          placeholder="0 = enviar inmediatamente"
-        />
-        {delayMinutes > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Se enviará en:{" "}
-            {delayMinutes >= 1440
-              ? `${(delayMinutes / 1440).toFixed(1)} días`
-              : delayMinutes >= 60
-              ? `${(delayMinutes / 60).toFixed(1)} horas`
-              : `${delayMinutes} minutos`}
-          </p>
-        )}
+        <Label>Pacing Profile</Label>
+        <Select value={selectedPacingProfile || "default"} onValueChange={(v) => setSelectedPacingProfile(v === "default" ? "" : v)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Usar perfil por defecto" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Usar perfil por defecto</SelectItem>
+            {pacingProfiles.map((profile) => (
+              <SelectItem key={profile.id} value={profile.id}>
+                {profile.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Template "Apply to All" Section */}
@@ -393,13 +442,29 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
               placeholder="Ver más"
             />
           </div>
-          <div className="space-y-2 col-span-2">
+          <div className="space-y-2">
             <Label className="text-xs">URL del Botón</Label>
             <Input
               value={templateCard.button_url}
               onChange={(e) => setTemplateCard({ ...templateCard, button_url: e.target.value })}
               placeholder="https://..."
             />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">App</Label>
+            <Select value={templateCard.app_key || "default"} onValueChange={(v) => setTemplateCard({ ...templateCard, app_key: v === "default" ? "" : v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Usar app por defecto" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Usar app por defecto</SelectItem>
+                {apps.map((app) => (
+                  <SelectItem key={app.key} value={app.key}>
+                    {app.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
@@ -469,6 +534,43 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
                     onChange={(e) => updateCard(card.id, "button_url", e.target.value)}
                     placeholder="https://..."
                   />
+                </div>
+                
+                {idx > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Delay después del anterior (minutos)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={card.delay_minutes}
+                      onChange={(e) => updateCard(card.id, "delay_minutes", parseInt(e.target.value) || 0)}
+                      placeholder="30"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {card.delay_minutes >= 1440 
+                        ? `${(card.delay_minutes / 1440).toFixed(1)} días` 
+                        : card.delay_minutes >= 60
+                        ? `${(card.delay_minutes / 60).toFixed(1)} horas`
+                        : `${card.delay_minutes} minutos`}
+                    </p>
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <Label className="text-xs">App para este mensaje</Label>
+                  <Select value={card.app_key || "default"} onValueChange={(v) => updateCard(card.id, "app_key", v === "default" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Usar app por defecto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Usar app por defecto</SelectItem>
+                      {apps.map((app) => (
+                        <SelectItem key={app.key} value={app.key}>
+                          {app.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
