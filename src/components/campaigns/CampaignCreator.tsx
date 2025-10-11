@@ -202,6 +202,10 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
                 title: cardTitle.trim(),
                 subtitle: cardSubtitle.trim(),
                 image_url: cardImageUrl.trim(),
+                default_action: {
+                  type: "web_url",
+                  url: cardButtonUrl.trim()
+                },
                 buttons: [{
                   type: "web_url",
                   url: cardButtonUrl.trim(),

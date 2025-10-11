@@ -116,11 +116,33 @@ async function startCampaignSending(campaignId: string) {
 
     console.log(`[campaign-sending] Pacing: ${JSON.stringify(pacingProfile)}`);
 
-    // Get all conversations for selected fanpages
-    const { data: conversations } = await supabaseClient
-      .from('fanpage_conversations')
-      .select('*')
-      .in('page_id', campaignFanpages.map(f => f.page_id));
+    // Get all conversations for selected fanpages (fetch ALL without limit)
+    let allConversations: any[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    
+    while (true) {
+      const { data: conversations, error } = await supabaseClient
+        .from('fanpage_conversations')
+        .select('*')
+        .in('page_id', campaignFanpages.map(f => f.page_id))
+        .range(from, from + pageSize - 1);
+      
+      if (error) {
+        console.error('[campaign-sending] Error fetching conversations:', error);
+        break;
+      }
+      
+      if (!conversations || conversations.length === 0) break;
+      
+      allConversations = allConversations.concat(conversations);
+      console.log(`[campaign-sending] Fetched ${conversations.length} conversations (total: ${allConversations.length})`);
+      
+      if (conversations.length < pageSize) break;
+      from += pageSize;
+    }
+    
+    const conversations = allConversations;
 
     if (!conversations || conversations.length === 0) {
       throw new Error('No conversations found');
@@ -309,7 +331,18 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
           attachment: message.arguments.attachment
         };
       } else if (message.type === 'generic') {
-        // Card message
+        // Card message - ensure default_action is present for clickable image
+        const cardPayload = message.arguments.attachment.payload;
+        if (cardPayload.elements && cardPayload.elements[0] && !cardPayload.elements[0].default_action) {
+          // Add default_action if not present (use first button URL)
+          const firstButton = cardPayload.elements[0].buttons?.[0];
+          if (firstButton?.url) {
+            cardPayload.elements[0].default_action = {
+              type: "web_url",
+              url: firstButton.url
+            };
+          }
+        }
         messageData.message = {
           attachment: message.arguments.attachment
         };
