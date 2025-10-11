@@ -256,13 +256,6 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold">Crear Cards en Masa</h3>
-        <p className="text-sm text-muted-foreground">
-          Crea hasta 20 cards en un solo mensaje
-        </p>
-      </div>
-
       {/* Campaign Name */}
       <div className="space-y-2">
         <Label>Nombre de Campaña *</Label>
@@ -301,12 +294,12 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>App</Label>
-          <Select value={selectedApp} onValueChange={setSelectedApp}>
+          <Select value={selectedApp || "default"} onValueChange={(v) => setSelectedApp(v === "default" ? "" : v)}>
             <SelectTrigger>
               <SelectValue placeholder="Usar app por defecto" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Usar app por defecto</SelectItem>
+              <SelectItem value="default">Usar app por defecto</SelectItem>
               {apps.map((app) => (
                 <SelectItem key={app.key} value={app.key}>
                   {app.name}
@@ -317,12 +310,12 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         </div>
         <div className="space-y-2">
           <Label>Pacing Profile</Label>
-          <Select value={selectedPacingProfile} onValueChange={setSelectedPacingProfile}>
+          <Select value={selectedPacingProfile || "default"} onValueChange={(v) => setSelectedPacingProfile(v === "default" ? "" : v)}>
             <SelectTrigger>
               <SelectValue placeholder="Usar perfil por defecto" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Usar perfil por defecto</SelectItem>
+              <SelectItem value="default">Usar perfil por defecto</SelectItem>
               {pacingProfiles.map((profile) => (
                 <SelectItem key={profile.id} value={profile.id}>
                   {profile.name}

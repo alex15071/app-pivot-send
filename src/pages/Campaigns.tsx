@@ -428,6 +428,12 @@ const Campaigns = () => {
 
       <Dialog open={showBatchCardCreator} onOpenChange={setShowBatchCardCreator}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear Cards en Masa</DialogTitle>
+            <DialogDescription>
+              Crea hasta 20 cards en un solo mensaje programado
+            </DialogDescription>
+          </DialogHeader>
           <BatchCardCreator onClose={() => setShowBatchCardCreator(false)} />
         </DialogContent>
       </Dialog>
