@@ -30,11 +30,24 @@ serve(async (req) => {
         const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
         const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${app_key}&scope=${scope}&response_type=code`;
         
+        console.log('[oauth-callback] Generated auth URL for app:', app_key);
+        
         return new Response(
           JSON.stringify({ authUrl }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { 
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
         );
       }
+      
+      return new Response(
+        JSON.stringify({ error: 'Invalid action' }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
     }
 
     // Handle GET requests from Facebook OAuth callback
@@ -55,6 +68,7 @@ serve(async (req) => {
       return new Response(null, {
         status: 302,
         headers: {
+          ...corsHeaders,
           'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(`Facebook error: ${error}`)}`,
         },
       });
@@ -65,6 +79,7 @@ serve(async (req) => {
       return new Response(null, {
         status: 302,
         headers: {
+          ...corsHeaders,
           'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent('Invalid OAuth callback - missing code or app key')}`,
         },
       });
@@ -170,6 +185,7 @@ serve(async (req) => {
     return new Response(null, {
       status: 302,
       headers: {
+        ...corsHeaders,
         'Location': `https://app-pivot-send.lovable.app/accounts`,
       },
     });
@@ -182,6 +198,7 @@ serve(async (req) => {
     return new Response(null, {
       status: 302,
       headers: {
+        ...corsHeaders,
         'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(message)}`,
       },
     });
