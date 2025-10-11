@@ -67,19 +67,20 @@ const Accounts = () => {
 
   const handleConnect = () => {
     if (!selectedApp) {
-      alert("Please select an app first");
+      toast.error("Please select an app first");
       return;
     }
 
     const app = apps.find((a) => a.key === selectedApp);
     if (!app) return;
 
-    // Redirect to edge function directly - Facebook will call it with code & state
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    // Redirect directly to Supabase Edge Function
+    const supabaseUrl = "https://ejkndamjsfjdkithuqrj.supabase.co";
     const redirectUri = `${supabaseUrl}/functions/v1/oauth-callback`;
     const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${app.fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${selectedApp}&scope=${scope}`;
 
+    console.log("OAuth URL:", authUrl);
     window.location.href = authUrl;
   };
 
