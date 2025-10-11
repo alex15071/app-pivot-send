@@ -28,12 +28,13 @@ serve(async (req) => {
         .update({ status: 'running' })
         .eq('id', campaign_id);
 
-      // Start the sending process in background (fire and forget)
+      // Start the sending process in background (fire and forget with no await)
       startCampaignSending(campaign_id).catch(err => 
         console.error('[campaign-control] Background task error:', err)
       );
 
-      return new Response(JSON.stringify({ success: true }), {
+      // Return immediately to avoid timeout
+      return new Response(JSON.stringify({ success: true, message: 'Campaign started in background' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -165,17 +166,19 @@ async function startCampaignSending(campaignId: string) {
     let currentCooldown = pacingProfile.cooldown_on_error_sec;
 
     for (let i = 0; i < conversations.length; i += batchSize * parallelBatches) {
-      // Check if campaign is still running
+      // Check if campaign is still running (use maybeSingle to avoid errors)
       const { data: currentCampaign } = await supabaseClient
         .from('campaigns')
         .select('status')
         .eq('id', campaignId)
-        .single();
+        .maybeSingle();
 
-      if (currentCampaign?.status !== 'running') {
+      if (!currentCampaign || currentCampaign.status !== 'running') {
         console.log('[campaign-sending] Campaign paused or stopped');
         break;
       }
+      
+      console.log(`[campaign-sending] Processing batch ${Math.floor(i / (batchSize * parallelBatches)) + 1} (${i}-${Math.min(i + batchSize * parallelBatches, conversations.length)} of ${conversations.length})`);
 
       // Process parallel batches
       const batchPromises = [];
@@ -203,11 +206,15 @@ async function startCampaignSending(campaignId: string) {
         }
       });
 
-      // Update campaign stats
-      await supabaseClient
+      // Update campaign stats every batch
+      const { error: updateError } = await supabaseClient
         .from('campaigns')
         .update({ processed, delivered, failed })
         .eq('id', campaignId);
+      
+      if (updateError) {
+        console.error('[campaign-sending] Error updating stats:', updateError);
+      }
 
       // Calculate error ratio
       const totalRequests = results.reduce((acc, r) => 
@@ -262,126 +269,124 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
     throw new Error('No message found');
   }
 
-  // Build batch requests
-  const batchRequests = conversations.map((conv, idx) => {
-    const messageData: any = {
-      recipient: { id: conv.sender_id },
-      messaging_type: "MESSAGE_TAG",
-      tag: "CONFIRMED_EVENT_UPDATE",
-    };
-
-    if (message.type === 'text') {
-      messageData.message = { text: message.arguments.text };
-    } else if (message.type === 'image') {
-      messageData.message = {
-        attachment: message.arguments.attachment,
-        text: message.arguments.text || '',
-      };
-    }
-
-    return {
-      method: "POST",
-      relative_url: "me/messages",
-      body: JSON.stringify(messageData),
-    };
-  });
-
-  // Get page tokens and send
+  // Group conversations by page for efficient token fetching
+  const conversationsByPage = new Map<string, any[]>();
   for (const conv of conversations) {
+    if (!conversationsByPage.has(conv.page_id)) {
+      conversationsByPage.set(conv.page_id, []);
+    }
+    conversationsByPage.get(conv.page_id)!.push(conv);
+  }
+
+  // Process each page's conversations
+  for (const [pageId, pageConversations] of conversationsByPage) {
     try {
-      // Get token for this page
+      // Get token for this page (once per page instead of per conversation)
       const appKey = campaign.active_app_key || 
-        (await supabaseClient.from('fanpages').select('active_app_key').eq('page_id', conv.page_id).single()).data?.active_app_key;
+        (await supabaseClient.from('fanpages').select('active_app_key').eq('page_id', pageId).maybeSingle()).data?.active_app_key;
 
       if (!appKey) {
-        console.error(`[send-batch] No app key for page ${conv.page_id}`);
-        failed++;
+        console.error(`[send-batch] No app key for page ${pageId}`);
+        failed += pageConversations.length;
         continue;
       }
 
       const { data: tokenData } = await supabaseClient
         .from('fanpage_app_tokens')
         .select('page_access_token_encrypted')
-        .eq('page_id', conv.page_id)
+        .eq('page_id', pageId)
         .eq('app_key', appKey)
-        .single();
+        .maybeSingle();
 
       if (!tokenData) {
-        console.error(`[send-batch] No token for page ${conv.page_id} with app ${appKey}`);
-        failed++;
+        console.error(`[send-batch] No token for page ${pageId} with app ${appKey}`);
+        failed += pageConversations.length;
         continue;
       }
 
       const pageAccessToken = atob(tokenData.page_access_token_encrypted);
 
-      // Send message
-      const messageData: any = {
-        recipient: { id: conv.sender_id },
-        messaging_type: "MESSAGE_TAG",
-        tag: "CONFIRMED_EVENT_UPDATE",
-      };
+      // Send messages to all conversations for this page in parallel
+      const sendPromises = pageConversations.map(async (conv) => {
+        try {
+          const messageData: any = {
+            recipient: { id: conv.sender_id },
+            messaging_type: "MESSAGE_TAG",
+            tag: "CONFIRMED_EVENT_UPDATE",
+          };
 
-      if (message.type === 'text') {
-        messageData.message = { text: message.arguments.text };
-      } else if (message.type === 'image') {
-        messageData.message = message.arguments;
-      } else if (message.type === 'button') {
-        // Text + Button message
-        messageData.message = {
-          attachment: message.arguments.attachment
-        };
-      } else if (message.type === 'generic') {
-        // Card message - ensure default_action is present for clickable image
-        const cardPayload = message.arguments.attachment.payload;
-        if (cardPayload.elements && cardPayload.elements[0] && !cardPayload.elements[0].default_action) {
-          // Add default_action if not present (use first button URL)
-          const firstButton = cardPayload.elements[0].buttons?.[0];
-          if (firstButton?.url) {
-            cardPayload.elements[0].default_action = {
-              type: "web_url",
-              url: firstButton.url
+          if (message.type === 'text') {
+            messageData.message = { text: message.arguments.text };
+          } else if (message.type === 'image') {
+            messageData.message = message.arguments;
+          } else if (message.type === 'button') {
+            messageData.message = {
+              attachment: message.arguments.attachment
+            };
+          } else if (message.type === 'generic') {
+            // Card message - ensure default_action for clickable image
+            const cardPayload = JSON.parse(JSON.stringify(message.arguments.attachment.payload));
+            if (cardPayload.elements?.[0] && !cardPayload.elements[0].default_action) {
+              const firstButton = cardPayload.elements[0].buttons?.[0];
+              if (firstButton?.url) {
+                cardPayload.elements[0].default_action = {
+                  type: "web_url",
+                  url: firstButton.url
+                };
+              }
+            }
+            messageData.message = {
+              attachment: {
+                type: message.arguments.attachment.type,
+                payload: cardPayload
+              }
             };
           }
+
+          const response = await fetch(
+            `https://graph.facebook.com/v24.0/me/messages?access_token=${pageAccessToken}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(messageData),
+            }
+          );
+
+          const result = await response.json();
+
+          // Save result
+          await supabaseClient.from('send_results').insert({
+            campaign_id: campaignId,
+            page_id: pageId,
+            sender_id: conv.sender_id,
+            http_code: response.status,
+            fb_body_json: result,
+          });
+
+          return { success: response.ok, result, conv };
+        } catch (error) {
+          console.error(`[send-batch] Error sending to ${conv.sender_id}:`, error);
+          return { success: false, error, conv };
         }
-        messageData.message = {
-          attachment: message.arguments.attachment
-        };
-      }
+      });
 
-      const response = await fetch(
-        `https://graph.facebook.com/v24.0/me/messages?access_token=${pageAccessToken}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(messageData),
+      // Wait for all sends for this page to complete
+      const results = await Promise.allSettled(sendPromises);
+      
+      results.forEach((result) => {
+        processed++;
+        if (result.status === 'fulfilled' && result.value.success) {
+          delivered++;
+        } else {
+          failed++;
+          errors++;
         }
-      );
-
-      const result = await response.json();
-      processed++;
-
-      if (response.ok) {
-        delivered++;
-      } else {
-        failed++;
-        errors++;
-        console.error(`[send-batch] Error sending to ${conv.sender_id}:`, result);
-      }
-
-      // Save result
-      await supabaseClient.from('send_results').insert({
-        campaign_id: campaignId,
-        page_id: conv.page_id,
-        sender_id: conv.sender_id,
-        http_code: response.status,
-        fb_body_json: result,
       });
 
     } catch (error) {
-      processed++;
-      failed++;
-      errors++;
-      console.error('[send-batch] Error:', error);
+      console.error(`[send-batch] Error processing page ${pageId}:`, error);
+      failed += pageConversations.length;
+      errors += pageConversations.length;
     }
   }
 
