@@ -7,8 +7,12 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204,
+      headers: corsHeaders 
+    });
   }
 
   try {
@@ -17,12 +21,34 @@ serve(async (req) => {
     const state = url.searchParams.get('state'); // app_key
     const error = url.searchParams.get('error');
 
+    console.log('[oauth-callback] Received request:', {
+      method: req.method,
+      code: code ? 'present' : 'missing',
+      state: state || 'missing',
+      error: error || 'none',
+      fullUrl: req.url
+    });
+
     if (error) {
-      throw new Error(`OAuth error: ${error}`);
+      console.error('[oauth-callback] OAuth error from Facebook:', error);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...corsHeaders,
+          'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(`Facebook error: ${error}`)}`,
+        },
+      });
     }
 
     if (!code || !state) {
-      throw new Error('Missing code or state parameter');
+      console.error('[oauth-callback] Missing parameters:', { code: !!code, state: !!state });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...corsHeaders,
+          'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent('Invalid OAuth callback - missing code or app key')}`,
+        },
+      });
     }
 
     const supabaseClient = createClient(
