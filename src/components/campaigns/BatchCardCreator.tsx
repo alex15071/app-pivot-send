@@ -294,7 +294,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
 
         return {
           campaign_id: campaign.id,
-          message_type: "generic",
+          message_type: "card",
           message_arguments: messageArgs,
           delay_minutes: card.delay_minutes,
           sequence_order: idx + 1,
