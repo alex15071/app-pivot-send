@@ -36,8 +36,8 @@ serve(async (req) => {
         .eq('id', campaign_id)
         .single();
 
-      // For sequence campaigns on start, trigger the scheduler immediately
-      if (action === "start" && campaign?.is_sequence) {
+      // For sequence campaigns on start (without specific message_sequence_id), trigger the scheduler immediately
+      if (action === "start" && campaign?.is_sequence && !message_sequence_id) {
         console.log('[campaign-control] Starting sequence campaign, triggering scheduler');
         
         // Update campaign status to running
