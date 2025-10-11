@@ -273,15 +273,15 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
           <div>
             <Label htmlFor="app-select">App</Label>
             <Select 
-              value={selectedApp} 
-              onValueChange={setSelectedApp}
+              value={selectedApp || "default"} 
+              onValueChange={(val) => setSelectedApp(val === "default" ? "" : val)}
               disabled={createCampaignMutation.isPending}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Use default app" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Use default app</SelectItem>
+                <SelectItem value="default">Use default app</SelectItem>
                 {apps.map((app) => (
                   <SelectItem key={app.id} value={app.key}>
                     {app.name} ({app.key})
@@ -294,15 +294,15 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
           <div>
             <Label htmlFor="pacing-select">Pacing Profile</Label>
             <Select 
-              value={selectedPacingProfile} 
-              onValueChange={setSelectedPacingProfile}
+              value={selectedPacingProfile || "default"} 
+              onValueChange={(val) => setSelectedPacingProfile(val === "default" ? "" : val)}
               disabled={createCampaignMutation.isPending}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Use default pacing" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Default pacing</SelectItem>
+                <SelectItem value="default">Default pacing</SelectItem>
                 {pacingProfiles.map((profile) => (
                   <SelectItem key={profile.id} value={profile.id}>
                     {profile.name}
