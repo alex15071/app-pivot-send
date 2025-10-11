@@ -126,24 +126,53 @@ serve(async (req) => {
 
     console.log('[oauth-callback] Got user info:', userInfo.id);
 
-    // Save account
-    const { data: account, error: accountError } = await supabaseClient
+    // Check if this account already exists with this app
+    const { data: existingAccount } = await supabaseClient
       .from('accounts')
-      .upsert({
-        fb_user_id: userInfo.id,
-        name: userInfo.name,
-        photo_url: userInfo.picture?.data?.url || null,
-        app_key: app.key,
-        access_token_encrypted: btoa(userAccessToken),
-      }, {
-        onConflict: 'fb_user_id',
-      })
-      .select()
-      .single();
+      .select('*')
+      .eq('fb_user_id', userInfo.id)
+      .eq('app_key', app.key)
+      .maybeSingle();
 
-    if (accountError) {
-      console.error('[oauth-callback] Error saving account:', accountError);
-      throw accountError;
+    let account;
+    
+    if (existingAccount) {
+      // Update existing account
+      const { data: updated, error: updateError } = await supabaseClient
+        .from('accounts')
+        .update({
+          name: userInfo.name,
+          photo_url: userInfo.picture?.data?.url || null,
+          access_token_encrypted: btoa(userAccessToken),
+        })
+        .eq('id', existingAccount.id)
+        .select()
+        .single();
+      
+      if (updateError) {
+        console.error('[oauth-callback] Error updating account:', updateError);
+        throw updateError;
+      }
+      account = updated;
+    } else {
+      // Create new account (allows multiple apps for same FB user)
+      const { data: created, error: createError } = await supabaseClient
+        .from('accounts')
+        .insert({
+          fb_user_id: userInfo.id,
+          name: userInfo.name,
+          photo_url: userInfo.picture?.data?.url || null,
+          app_key: app.key,
+          access_token_encrypted: btoa(userAccessToken),
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('[oauth-callback] Error creating account:', createError);
+        throw createError;
+      }
+      account = created;
     }
 
     console.log('[oauth-callback] Saved account');

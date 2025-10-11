@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Play, Pause, BarChart3, Trash2 } from "lucide-react";
+import { Plus, Play, Pause, BarChart3, Trash2, Edit, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -25,6 +25,8 @@ interface Campaign {
 
 const Campaigns = () => {
   const [open, setOpen] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [mode, setMode] = useState<'create' | 'edit' | 'duplicate'>('create');
   const queryClient = useQueryClient();
 
   const { data: campaigns = [], isLoading } = useQuery({
@@ -118,21 +120,42 @@ const Campaigns = () => {
             <h1 className="text-3xl font-bold">Campaigns</h1>
             <p className="text-muted-foreground">Create and manage broadcast campaigns</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) {
+              setEditingCampaign(null);
+              setMode('create');
+            }
+          }}>
             <DialogTrigger asChild>
-              <Button>
+              <Button onClick={() => {
+                setMode('create');
+                setEditingCampaign(null);
+              }}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Campaign
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Create New Campaign</DialogTitle>
+                <DialogTitle>
+                  {mode === 'create' && 'Create New Campaign'}
+                  {mode === 'edit' && 'Edit Campaign'}
+                  {mode === 'duplicate' && 'Duplicate Campaign'}
+                </DialogTitle>
                 <DialogDescription>
                   Select fanpages, compose messages, and configure sending parameters
                 </DialogDescription>
               </DialogHeader>
-              <CampaignCreator onClose={() => setOpen(false)} />
+              <CampaignCreator 
+                onClose={() => {
+                  setOpen(false);
+                  setEditingCampaign(null);
+                  setMode('create');
+                }} 
+                campaign={editingCampaign}
+                mode={mode}
+              />
             </DialogContent>
           </Dialog>
         </div>
@@ -164,14 +187,28 @@ const Campaigns = () => {
                     </div>
                     <div className="flex gap-2">
                       {campaign.status === "draft" || campaign.status === "paused" ? (
-                        <Button
-                          size="sm"
-                          onClick={() => startCampaignMutation.mutate(campaign.id)}
-                          disabled={startCampaignMutation.isPending}
-                        >
-                          <Play className="mr-2 h-4 w-4" />
-                          Start
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingCampaign(campaign);
+                              setMode('edit');
+                              setOpen(true);
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => startCampaignMutation.mutate(campaign.id)}
+                            disabled={startCampaignMutation.isPending}
+                          >
+                            <Play className="mr-2 h-4 w-4" />
+                            Start
+                          </Button>
+                        </>
                       ) : campaign.status === "running" ? (
                         <Button
                           size="sm"
@@ -183,6 +220,17 @@ const Campaigns = () => {
                           Pause
                         </Button>
                       ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditingCampaign(campaign);
+                          setMode('duplicate');
+                          setOpen(true);
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">

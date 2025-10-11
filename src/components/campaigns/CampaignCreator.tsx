@@ -14,6 +14,8 @@ import { Loader2 } from "lucide-react";
 
 interface CampaignCreatorProps {
   onClose: () => void;
+  campaign?: any; // For edit/duplicate mode
+  mode?: 'create' | 'edit' | 'duplicate';
 }
 
 interface Fanpage {
@@ -36,11 +38,11 @@ interface PacingProfile {
   name: string;
 }
 
-const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
-  const [campaignName, setCampaignName] = useState("");
+const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreatorProps) => {
+  const [campaignName, setCampaignName] = useState(mode === 'duplicate' ? `${campaign?.name} (Copy)` : campaign?.name || "");
   const [selectedFanpages, setSelectedFanpages] = useState<string[]>([]);
-  const [selectedApp, setSelectedApp] = useState("");
-  const [selectedPacingProfile, setSelectedPacingProfile] = useState("");
+  const [selectedApp, setSelectedApp] = useState(campaign?.active_app_key || "");
+  const [selectedPacingProfile, setSelectedPacingProfile] = useState(campaign?.pacing_profile_id || "");
   const [messageType, setMessageType] = useState<"text" | "image" | "text_button" | "card">("text");
   const [messageText, setMessageText] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -51,6 +53,7 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
   const [cardImageUrl, setCardImageUrl] = useState("");
   const [cardButtonText, setCardButtonText] = useState("");
   const [cardButtonUrl, setCardButtonUrl] = useState("");
+  const [isLoadingCampaignData, setIsLoadingCampaignData] = useState(!!campaign);
   const queryClient = useQueryClient();
 
   const { data: fanpages = [], isLoading: loadingFanpages } = useQuery<Fanpage[]>({
@@ -89,7 +92,65 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
     },
   });
 
-  const isLoadingData = loadingFanpages || loadingApps || loadingProfiles;
+  // Load campaign data for edit/duplicate mode
+  useQuery({
+    queryKey: ['campaign-data', campaign?.id],
+    queryFn: async () => {
+      if (!campaign?.id) return null;
+      
+      // Load fanpages
+      const { data: fanpageLinks } = await supabase
+        .from('campaign_fanpages')
+        .select('page_id')
+        .eq('campaign_id', campaign.id);
+      
+      if (fanpageLinks) {
+        setSelectedFanpages(fanpageLinks.map(f => f.page_id));
+      }
+      
+      // Load message
+      const { data: messages } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .limit(1);
+      
+      if (messages && messages[0]) {
+        const msg = messages[0];
+        const args = msg.arguments as any;
+        
+        if (msg.type === 'text') {
+          setMessageType('text');
+          setMessageText(args.text || '');
+        } else if (msg.type === 'image') {
+          setMessageType('image');
+          setImageUrl(args.attachment?.payload?.url || '');
+          setMessageText(args.text || '');
+        } else if (msg.type === 'button') {
+          setMessageType('text_button');
+          setMessageText(args.text || '');
+          setButtonText(args.attachment?.payload?.buttons?.[0]?.title || '');
+          setButtonUrl(args.attachment?.payload?.buttons?.[0]?.url || '');
+        } else if (msg.type === 'generic') {
+          setMessageType('card');
+          const element = args.attachment?.payload?.elements?.[0];
+          if (element) {
+            setCardTitle(element.title || '');
+            setCardSubtitle(element.subtitle || '');
+            setCardImageUrl(element.image_url || '');
+            setCardButtonText(element.buttons?.[0]?.title || '');
+            setCardButtonUrl(element.buttons?.[0]?.url || '');
+          }
+        }
+      }
+      
+      setIsLoadingCampaignData(false);
+      return true;
+    },
+    enabled: !!campaign?.id && (mode === 'edit' || mode === 'duplicate'),
+  });
+
+  const isLoadingData = loadingFanpages || loadingApps || loadingProfiles || isLoadingCampaignData;
 
   const validateForm = (): string | null => {
     if (!campaignName.trim()) {
@@ -125,10 +186,37 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
         throw new Error(validationError);
       }
 
-      // Step 1: Create campaign
-      const { data: campaign, error: campaignError } = await supabase
-        .from("campaigns")
-        .insert({
+      // Step 1: Update or Create campaign
+      let campaignData;
+      
+      if (mode === 'edit' && campaign?.id) {
+        // Update existing campaign
+        const { data, error: campaignError } = await supabase
+          .from("campaigns")
+          .update({
+            name: campaignName.trim(),
+            active_app_key: selectedApp || null,
+            pacing_profile_id: selectedPacingProfile || null,
+          })
+          .eq('id', campaign.id)
+          .select()
+          .single();
+        
+        if (campaignError) {
+          console.error("Campaign update error:", campaignError);
+          throw new Error(`Failed to update campaign: ${campaignError.message}`);
+        }
+        
+        // Delete existing fanpage links and messages
+        await supabase.from("campaign_fanpages").delete().eq("campaign_id", campaign.id);
+        await supabase.from("messages").delete().eq("campaign_id", campaign.id);
+        
+        campaignData = data;
+      } else {
+        // Create new campaign
+        const { data, error: campaignError } = await supabase
+          .from("campaigns")
+          .insert({
           name: campaignName.trim(),
           status: "draft",
           active_app_key: selectedApp || null,
@@ -141,14 +229,17 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
         .select()
         .single();
 
-      if (campaignError) {
-        console.error("Campaign creation error:", campaignError);
-        throw new Error(`Failed to create campaign: ${campaignError.message}`);
+        if (campaignError) {
+          console.error("Campaign creation error:", campaignError);
+          throw new Error(`Failed to create campaign: ${campaignError.message}`);
+        }
+        
+        campaignData = data;
       }
 
       // Step 2: Link fanpages to campaign
       const fanpageLinks = selectedFanpages.map((pageId) => ({
-        campaign_id: campaign.id,
+        campaign_id: campaignData.id,
         page_id: pageId,
       }));
 
@@ -158,8 +249,9 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
 
       if (linkError) {
         console.error("Fanpage link error:", linkError);
-        // Try to clean up the campaign
-        await supabase.from("campaigns").delete().eq("id", campaign.id);
+        if (mode !== 'edit') {
+          await supabase.from("campaigns").delete().eq("id", campaignData.id);
+        }
         throw new Error(`Failed to link fanpages: ${linkError.message}`);
       }
 
@@ -225,7 +317,7 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
       const { error: messageError } = await supabase
         .from("messages")
         .insert({
-          campaign_id: campaign.id,
+          campaign_id: campaignData.id,
           type: dbMessageType as any,
           arguments: messageArgs as any,
           sent: 0,
@@ -233,22 +325,29 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
 
       if (messageError) {
         console.error("Message creation error:", messageError);
-        // Try to clean up
-        await supabase.from("campaign_fanpages").delete().eq("campaign_id", campaign.id);
-        await supabase.from("campaigns").delete().eq("id", campaign.id);
+        if (mode !== 'edit') {
+          await supabase.from("campaign_fanpages").delete().eq("campaign_id", campaignData.id);
+          await supabase.from("campaigns").delete().eq("id", campaignData.id);
+        }
         throw new Error(`Failed to create message: ${messageError.message}`);
       }
 
-      return campaign;
+      return campaignData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
-      toast.success("Campaign created successfully!");
+      const successMsg = mode === 'edit' ? 'Campaign updated successfully!' : 
+                         mode === 'duplicate' ? 'Campaign duplicated successfully!' : 
+                         'Campaign created successfully!';
+      toast.success(successMsg);
       onClose();
     },
     onError: (error: Error) => {
-      console.error("Campaign creation failed:", error);
-      toast.error(error.message || "Failed to create campaign");
+      console.error("Campaign operation failed:", error);
+      const errorMsg = mode === 'edit' ? 'Failed to update campaign' : 
+                       mode === 'duplicate' ? 'Failed to duplicate campaign' : 
+                       'Failed to create campaign';
+      toast.error(error.message || errorMsg);
     },
   });
 
