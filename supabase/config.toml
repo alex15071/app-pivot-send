@@ -2,3 +2,6 @@ project_id = "ejkndamjsfjdkithuqrj"
 
 [functions.oauth-callback]
 verify_jwt = false
+
+[functions.facebook-webhook]
+verify_jwt = false
