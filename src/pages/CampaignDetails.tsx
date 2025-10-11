@@ -8,6 +8,7 @@ import { ArrowLeft, Check, X, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import SequenceTimeline from "@/components/campaigns/SequenceTimeline";
 
 interface CampaignStats {
   id: string;
@@ -20,6 +21,8 @@ interface CampaignStats {
   created_at: string;
   current_offset?: number;
   current_page_stats?: any;
+  is_sequence?: boolean;
+  current_sequence_step?: number;
 }
 
 interface FanpageStats {
@@ -46,6 +49,24 @@ const CampaignDetails = () => {
       if (error) throw error;
       return data as CampaignStats;
     },
+    refetchInterval: 5000,
+  });
+
+  const { data: sequences = [] } = useQuery({
+    queryKey: ["campaign-sequences", id],
+    queryFn: async () => {
+      if (!campaign?.is_sequence) return [];
+      
+      const { data, error } = await supabase
+        .from("message_sequences")
+        .select("*")
+        .eq("campaign_id", id)
+        .order("sequence_order");
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!campaign?.is_sequence,
     refetchInterval: 5000,
   });
 
@@ -166,10 +187,32 @@ const CampaignDetails = () => {
               <Badge variant="secondary" className={getStatusColor(campaign.status)}>
                 {campaign.status}
               </Badge>
+              {campaign.is_sequence && (
+                <Badge variant="outline">
+                  Secuencia {campaign.current_sequence_step || 0}
+                </Badge>
+              )}
             </div>
-            <p className="text-muted-foreground">Campaign details and performance breakdown</p>
+            <p className="text-muted-foreground">
+              {campaign.is_sequence 
+                ? "Secuencia de mensajes programados" 
+                : "Campaign details and performance breakdown"}
+            </p>
           </div>
         </div>
+
+        {/* Sequence Timeline - Only for sequence campaigns */}
+        {campaign.is_sequence && sequences.length > 0 && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold">Secuencia de Mensajes</h2>
+              <p className="text-sm text-muted-foreground">
+                Mensajes programados y su estado de envío
+              </p>
+            </div>
+            <SequenceTimeline sequences={sequences} />
+          </div>
+        )}
 
         {/* Overall Stats */}
         <Card>
