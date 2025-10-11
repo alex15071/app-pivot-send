@@ -46,6 +46,15 @@ serve(async (req) => {
           .update({ status: 'running' })
           .eq('id', campaign_id);
 
+        // Update any scheduled messages that are overdue to now
+        const now = new Date().toISOString();
+        await supabaseClient
+          .from('message_sequences')
+          .update({ scheduled_for: now })
+          .eq('campaign_id', campaign_id)
+          .eq('status', 'scheduled')
+          .lt('scheduled_for', now);
+
         // Invoke the sequence scheduler to process any ready messages
         const schedulerPromise = supabaseClient.functions.invoke('sequence-scheduler', {
           body: {}

@@ -239,12 +239,12 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
 
       const totalRecipients = fanpageData?.reduce((sum, fp) => sum + (fp.conversations || 0), 0) || 0;
 
-      // Create campaign as sequence - set to running so first message sends immediately
+      // Create campaign as sequence - starts as draft, user must click Start button
       const { data: campaign, error: campaignError } = await supabase
         .from("campaigns")
         .insert([{
           name: campaignName.trim(),
-          status: "running",
+          status: "draft",
           is_sequence: true,
           sequence_start_at: startDateTime.toISOString(),
           pacing_profile_id: selectedPacingProfile || null,
@@ -273,8 +273,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         throw linkError;
       }
 
-      // Calculate scheduled_for times for each card
-      const now = new Date();
+      // Calculate scheduled_for times for each card based on startDateTime
       let cumulativeMinutes = 0;
       const sequenceMessages = cards.map((card, idx) => {
         const scheduledFor = new Date(startDateTime);
@@ -314,7 +313,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           message_arguments: messageArgs,
           delay_minutes: card.delay_minutes,
           sequence_order: idx + 1,
-          scheduled_for: idx === 0 ? now.toISOString() : scheduledFor.toISOString(),
+          scheduled_for: scheduledFor.toISOString(),
           status: 'scheduled',
           app_key: card.app_key,
         };
