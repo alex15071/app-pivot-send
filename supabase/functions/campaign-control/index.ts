@@ -566,7 +566,7 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
             messageData.message = {
               attachment: message.arguments.attachment
             };
-          } else if (message.type === 'generic') {
+          } else if (message.type === 'generic' || message.type === 'card') {
             // Card message - ensure default_action for clickable image
             const cardPayload = JSON.parse(JSON.stringify(message.arguments.attachment.payload));
             if (cardPayload.elements?.[0] && !cardPayload.elements[0].default_action) {
