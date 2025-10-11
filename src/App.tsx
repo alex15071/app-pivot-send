@@ -11,7 +11,6 @@ import Accounts from "./pages/Accounts";
 import Fanpages from "./pages/Fanpages";
 import Campaigns from "./pages/Campaigns";
 import PacingProfiles from "./pages/PacingProfiles";
-import OAuthCallback from "./pages/OAuthCallback";
 
 const queryClient = new QueryClient();
 
@@ -23,7 +22,6 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/oauth/callback" element={<OAuthCallback />} />
           <Route path="/" element={<Index />} />
           <Route path="/apps" element={<Apps />} />
           <Route path="/accounts" element={<Accounts />} />
