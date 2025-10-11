@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Declare EdgeRuntime global for TypeScript
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<any>) => void;
+} | undefined;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -31,10 +36,15 @@ serve(async (req) => {
           .eq('id', campaign_id);
       }
 
-      // Start the sending process in background with offset
-      startCampaignSending(campaign_id, startOffset).catch(err => 
+      // Start the sending process in background with offset using waitUntil
+      const sendingPromise = startCampaignSending(campaign_id, startOffset).catch(err => 
         console.error('[campaign-control] Background task error:', err)
       );
+      
+      // Use waitUntil to ensure the function stays alive until the task completes
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+        EdgeRuntime.waitUntil(sendingPromise);
+      }
 
       // Return immediately to avoid timeout
       return new Response(JSON.stringify({ success: true, message: 'Campaign started in background' }), {
