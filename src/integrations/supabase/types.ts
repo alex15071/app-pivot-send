@@ -504,6 +504,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_campaign_fanpage_stats: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          failed: number
+          fanpage_name: string
+          image_url: string
+          page_id: string
+          successful: number
+          total_sent: number
+        }[]
+      }
       is_admin: {
         Args: { _user_id: string }
         Returns: boolean

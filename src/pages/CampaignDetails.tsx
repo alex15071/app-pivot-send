@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Check, X, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 interface CampaignStats {
   id: string;
@@ -24,6 +25,7 @@ interface CampaignStats {
 interface FanpageStats {
   page_id: string;
   fanpage_name: string;
+  image_url: string | null;
   total_sent: number;
   successful: number;
   failed: number;
@@ -50,52 +52,60 @@ const CampaignDetails = () => {
   const { data: fanpageStats = [], isLoading: statsLoading } = useQuery({
     queryKey: ["campaign-fanpage-stats", id],
     queryFn: async () => {
-      // Get send results breakdown by fanpage
-      const { data: results } = await supabase
-        .from("send_results")
-        .select(`
-          page_id,
-          http_code
-        `)
-        .eq("campaign_id", id);
+      // Use raw SQL to aggregate directly in the database for better performance
+      const { data: results, error } = await supabase.rpc('get_campaign_fanpage_stats', {
+        p_campaign_id: id
+      });
 
-      if (!results || results.length === 0) return [];
+      if (error) {
+        console.error('Error fetching fanpage stats:', error);
+        // Fallback to manual grouping if RPC doesn't exist
+        const { data: sendResults } = await supabase
+          .from("send_results")
+          .select("page_id, http_code")
+          .eq("campaign_id", id);
 
-      // Group by page_id
-      const grouped = results.reduce((acc: any, row: any) => {
-        if (!acc[row.page_id]) {
-          acc[row.page_id] = {
-            page_id: row.page_id,
-            total_sent: 0,
-            successful: 0,
-            failed: 0,
-          };
-        }
-        acc[row.page_id].total_sent++;
-        if (row.http_code === 200) {
-          acc[row.page_id].successful++;
-        } else {
-          acc[row.page_id].failed++;
-        }
-        return acc;
-      }, {});
+        if (!sendResults || sendResults.length === 0) return [];
 
-      // Get fanpage names
-      const pageIds = Object.keys(grouped);
-      if (pageIds.length > 0) {
-        const { data: fanpages } = await supabase
-          .from("fanpages")
-          .select("page_id, name")
-          .in("page_id", pageIds);
-
-        fanpages?.forEach((fp: any) => {
-          if (grouped[fp.page_id]) {
-            grouped[fp.page_id].fanpage_name = fp.name;
+        // Group by page_id
+        const grouped: Record<string, any> = {};
+        sendResults.forEach((row: any) => {
+          if (!grouped[row.page_id]) {
+            grouped[row.page_id] = {
+              page_id: row.page_id,
+              total_sent: 0,
+              successful: 0,
+              failed: 0,
+            };
+          }
+          grouped[row.page_id].total_sent++;
+          if (row.http_code === 200) {
+            grouped[row.page_id].successful++;
+          } else {
+            grouped[row.page_id].failed++;
           }
         });
+
+        // Get fanpage details
+        const pageIds = Object.keys(grouped);
+        if (pageIds.length > 0) {
+          const { data: fanpages } = await supabase
+            .from("fanpages")
+            .select("page_id, name, image_url")
+            .in("page_id", pageIds);
+
+          fanpages?.forEach((fp: any) => {
+            if (grouped[fp.page_id]) {
+              grouped[fp.page_id].fanpage_name = fp.name;
+              grouped[fp.page_id].image_url = fp.image_url;
+            }
+          });
+        }
+
+        return Object.values(grouped) as FanpageStats[];
       }
 
-      return Object.values(grouped) as FanpageStats[];
+      return results as FanpageStats[];
     },
     enabled: !!id,
   });
@@ -230,8 +240,14 @@ const CampaignDetails = () => {
                   .sort((a, b) => b.total_sent - a.total_sent)
                   .map((stats) => (
                     <div key={stats.page_id} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
+                      <div className="flex items-center gap-4 mb-3">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={stats.image_url || undefined} alt={stats.fanpage_name} />
+                          <AvatarFallback>
+                            {stats.fanpage_name?.charAt(0) || stats.page_id.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
                           <h3 className="font-semibold">{stats.fanpage_name || stats.page_id}</h3>
                           <p className="text-sm text-muted-foreground">
                             {stats.total_sent.toLocaleString()} messages sent
