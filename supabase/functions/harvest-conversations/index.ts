@@ -21,6 +21,27 @@ serve(async (req) => {
 
     console.log(`[harvest-conversations] Starting harvest for page: ${page_id}`);
 
+    // Start background task without waiting
+    harvestConversations(supabaseClient, page_id).catch(err => 
+      console.error('[harvest-conversations] Background error:', err)
+    );
+
+    // Return immediately
+    return new Response(JSON.stringify({ success: true, message: 'Harvest started in background' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('[harvest-conversations] Error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: message }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});
+
+async function harvestConversations(supabaseClient: any, page_id: string) {
+  try {
     // Get fanpage with active app token
     const { data: fanpage, error: fanpageError } = await supabaseClient
       .from('fanpages')
@@ -124,16 +145,7 @@ serve(async (req) => {
       .eq('page_id', page_id);
 
     console.log(`[harvest-conversations] Completed. Total conversations: ${count}`);
-
-    return new Response(JSON.stringify({ success: true, count }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
   } catch (error) {
-    console.error('[harvest-conversations] Error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('[harvest-conversations] Background task error:', error);
   }
-});
+}

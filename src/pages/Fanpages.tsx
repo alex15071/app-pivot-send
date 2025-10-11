@@ -80,7 +80,7 @@ const Fanpages = () => {
     setHarvestTotal(0);
     setShowHarvestDialog(true);
     
-    toast.info(`Starting harvest for ${pageName}...`);
+    toast.info(`Harvesting ${pageName} in background...`);
     
     try {
       // Poll for progress updates every second
@@ -98,30 +98,26 @@ const Fanpages = () => {
         }
       }, 1000);
 
-      const { data, error } = await supabase.functions.invoke("harvest-conversations", {
+      // Start harvest in background
+      const { error } = await supabase.functions.invoke("harvest-conversations", {
         body: { page_id: pageId },
       });
       
-      clearInterval(progressInterval);
-      
       if (error) throw error;
       
-      // Final update
-      const finalCount = data?.count || 0;
-      setHarvestProgress(finalCount);
-      setHarvestTotal(finalCount);
-      toast.success(`Harvest completed! Found ${finalCount} conversations`);
-      refetch();
+      toast.success(`Harvest started! You can close this and it will continue in background.`);
       
-      // Keep dialog open for 2 seconds to show final count
+      // Keep polling for 30 seconds then close dialog
       setTimeout(() => {
+        clearInterval(progressInterval);
         setShowHarvestDialog(false);
         setHarvestingPageId(null);
-      }, 2000);
+        refetch();
+      }, 30000);
     } catch (error: any) {
       setShowHarvestDialog(false);
       setHarvestingPageId(null);
-      toast.error(error.message || "Failed to harvest conversations");
+      toast.error(error.message || "Failed to start harvest");
     }
   };
 
@@ -233,7 +229,7 @@ const Fanpages = () => {
           <DialogHeader>
             <DialogTitle>Harvesting Conversations</DialogTitle>
             <DialogDescription>
-              Please wait while we collect conversations from Facebook...
+              Running in background... You can close this dialog and the harvest will continue.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -248,10 +244,13 @@ const Fanpages = () => {
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 <span className="text-sm text-muted-foreground">
                   {harvestProgress === 0 
-                    ? "Starting harvest... This may take a while for large fanpages." 
-                    : "Scanning conversations in real-time..."}
+                    ? "Starting harvest..." 
+                    : "Processing in background..."}
                 </span>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                The harvest will continue even if you close this dialog. The count will keep updating automatically.
+              </p>
             </div>
           </div>
         </DialogContent>
