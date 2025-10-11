@@ -36,6 +36,7 @@ interface Fanpage {
   conversations: number;
   active_app_key: string;
   created_at: string;
+  connected_apps?: string[];
 }
 
 const Fanpages = () => {
@@ -53,7 +54,23 @@ const Fanpages = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Fanpage[];
+      
+      // For each fanpage, get all connected apps
+      const fanpagesWithApps = await Promise.all(
+        (data as Fanpage[]).map(async (page) => {
+          const { data: tokens } = await supabase
+            .from("fanpage_app_tokens")
+            .select("app_key")
+            .eq("page_id", page.page_id);
+          
+          return {
+            ...page,
+            connected_apps: tokens?.map(t => t.app_key) || [page.active_app_key],
+          };
+        })
+      );
+      
+      return fanpagesWithApps;
     },
   });
 
@@ -160,8 +177,14 @@ const Fanpages = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Connected Apps:</span>
+                    <Badge variant="secondary">
+                      {page.connected_apps?.join('+') || page.active_app_key}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Active App:</span>
-                    <Badge variant="secondary">{page.active_app_key}</Badge>
+                    <Badge variant="outline">{page.active_app_key}</Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Page ID:</span>

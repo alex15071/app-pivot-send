@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Play, Pause, BarChart3, Trash2, Edit, Copy } from "lucide-react";
+import { Plus, Play, Pause, BarChart3, Trash2, Edit, Copy, Trash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -98,6 +98,32 @@ const Campaigns = () => {
     },
   });
 
+  const deleteAllCampaignsMutation = useMutation({
+    mutationFn: async () => {
+      // Get all campaign IDs
+      const { data: allCampaigns } = await supabase.from("campaigns").select("id");
+      if (!allCampaigns || allCampaigns.length === 0) return;
+      
+      const campaignIds = allCampaigns.map(c => c.id);
+      
+      // Delete all related data
+      await supabase.from("campaign_fanpages").delete().in("campaign_id", campaignIds);
+      await supabase.from("messages").delete().in("campaign_id", campaignIds);
+      await supabase.from("send_results").delete().in("campaign_id", campaignIds);
+      
+      // Delete all campaigns
+      const { error } = await supabase.from("campaigns").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      toast.success("All campaigns deleted");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "running": return "bg-green-500";
@@ -120,44 +146,73 @@ const Campaigns = () => {
             <h1 className="text-3xl font-bold">Campaigns</h1>
             <p className="text-muted-foreground">Create and manage broadcast campaigns</p>
           </div>
-          <Dialog open={open} onOpenChange={(isOpen) => {
-            setOpen(isOpen);
-            if (!isOpen) {
-              setEditingCampaign(null);
-              setMode('create');
-            }
-          }}>
-            <DialogTrigger asChild>
-              <Button onClick={() => {
-                setMode('create');
+          <div className="flex gap-2">
+            {campaigns.length > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">
+                    <Trash className="mr-2 h-4 w-4" />
+                    Delete All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete All Campaigns</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete ALL {campaigns.length} campaigns? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={() => deleteAllCampaignsMutation.mutate()}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete All
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <Dialog open={open} onOpenChange={(isOpen) => {
+              setOpen(isOpen);
+              if (!isOpen) {
                 setEditingCampaign(null);
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Campaign
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {mode === 'create' && 'Create New Campaign'}
-                  {mode === 'edit' && 'Edit Campaign'}
-                  {mode === 'duplicate' && 'Duplicate Campaign'}
-                </DialogTitle>
-                <DialogDescription>
-                  Select fanpages, compose messages, and configure sending parameters
-                </DialogDescription>
-              </DialogHeader>
-              <CampaignCreator 
-                onClose={() => {
-                  setOpen(false);
-                  setEditingCampaign(null);
+                setMode('create');
+              }
+            }}>
+              <DialogTrigger asChild>
+                <Button onClick={() => {
                   setMode('create');
-                }} 
-                campaign={editingCampaign}
-                mode={mode}
-              />
-            </DialogContent>
-          </Dialog>
+                  setEditingCampaign(null);
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Campaign
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    {mode === 'create' && 'Create New Campaign'}
+                    {mode === 'edit' && 'Edit Campaign'}
+                    {mode === 'duplicate' && 'Duplicate Campaign'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Select fanpages, compose messages, and configure sending parameters
+                  </DialogDescription>
+                </DialogHeader>
+                <CampaignCreator 
+                  onClose={() => {
+                    setOpen(false);
+                    setEditingCampaign(null);
+                    setMode('create');
+                  }} 
+                  campaign={editingCampaign}
+                  mode={mode}
+                />
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {isLoading ? (

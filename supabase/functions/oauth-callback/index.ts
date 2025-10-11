@@ -154,6 +154,7 @@ serve(async (req) => {
         throw updateError;
       }
       account = updated;
+      console.log('[oauth-callback] Updated existing account for app:', app.key);
     } else {
       // Create new account (allows multiple apps for same FB user)
       const { data: created, error: createError } = await supabaseClient
@@ -173,6 +174,7 @@ serve(async (req) => {
         throw createError;
       }
       account = created;
+      console.log('[oauth-callback] Created new account for app:', app.key);
     }
 
     console.log('[oauth-callback] Saved account');
