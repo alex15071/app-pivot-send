@@ -6,8 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { UserPlus, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 
 interface App {
   id: string;
@@ -27,6 +29,17 @@ interface Account {
 
 const Accounts = () => {
   const [selectedApp, setSelectedApp] = useState<string>("");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle OAuth callback errors
+  useEffect(() => {
+    const error = searchParams.get("error");
+    if (error) {
+      toast.error(`Connection failed: ${error}`);
+      // Clear error from URL
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
 
   const { data: apps = [] } = useQuery({
     queryKey: ["apps"],
@@ -61,7 +74,9 @@ const Accounts = () => {
     const app = apps.find((a) => a.key === selectedApp);
     if (!app) return;
 
-    const redirectUri = `${window.location.origin}/oauth/callback`;
+    // Redirect to edge function directly - Facebook will call it with code & state
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const redirectUri = `${supabaseUrl}/functions/v1/oauth-callback`;
     const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${app.fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${selectedApp}&scope=${scope}`;
 
