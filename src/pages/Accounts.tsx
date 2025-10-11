@@ -1,46 +1,155 @@
+import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, UserPlus } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { UserPlus, ExternalLink } from "lucide-react";
+
+interface App {
+  id: string;
+  key: string;
+  name: string;
+  fb_app_id: string;
+}
+
+interface Account {
+  id: string;
+  fb_user_id: string;
+  name: string;
+  photo_url: string;
+  app_key: string;
+  created_at: string;
+}
 
 const Accounts = () => {
+  const [selectedApp, setSelectedApp] = useState<string>("");
+
+  const { data: apps = [] } = useQuery({
+    queryKey: ["apps"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("apps")
+        .select("*")
+        .order("is_default", { ascending: false });
+      if (error) throw error;
+      return data as App[];
+    },
+  });
+
+  const { data: accounts = [], isLoading } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Account[];
+    },
+  });
+
+  const handleConnect = () => {
+    if (!selectedApp) {
+      alert("Please select an app first");
+      return;
+    }
+
+    const app = apps.find((a) => a.key === selectedApp);
+    if (!app) return;
+
+    const redirectUri = `${window.location.origin}/oauth/callback`;
+    const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
+    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${app.fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${selectedApp}&scope=${scope}`;
+
+    window.location.href = authUrl;
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Facebook Accounts</h1>
-            <p className="text-muted-foreground">
-              Connect Facebook accounts via OAuth to manage fanpages
-            </p>
-          </div>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Connect Account
-          </Button>
+        <div>
+          <h1 className="text-3xl font-bold">Facebook Accounts</h1>
+          <p className="text-muted-foreground">Connect Facebook accounts to access their fanpages</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Connected Accounts</CardTitle>
+            <CardTitle>Connect New Account</CardTitle>
             <CardDescription>
-              Facebook accounts connected through OAuth flow
+              Select which app to use for connecting your Facebook account
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <UserPlus className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No accounts connected yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Connect a Facebook account to get started with managing fanpages
-              </p>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Connect Your First Account
-              </Button>
-            </div>
+          <CardContent className="flex gap-4">
+            <Select value={selectedApp} onValueChange={setSelectedApp}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Select an app" />
+              </SelectTrigger>
+              <SelectContent>
+                {apps.map((app) => (
+                  <SelectItem key={app.id} value={app.key}>
+                    {app.name} ({app.key})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={handleConnect} disabled={!selectedApp}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Connect Account
+            </Button>
           </CardContent>
         </Card>
+
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Connected Accounts</h2>
+          {isLoading ? (
+            <div className="text-center py-8">Loading accounts...</div>
+          ) : accounts.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground">No accounts connected yet. Connect your first Facebook account above.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((account) => (
+                <Card key={account.id}>
+                  <CardHeader>
+                    <div className="flex items-start gap-4">
+                      <Avatar>
+                        <AvatarImage src={account.photo_url} />
+                        <AvatarFallback>{account.name?.[0] || "U"}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <CardTitle className="text-base">{account.name}</CardTitle>
+                        <CardDescription className="text-xs">
+                          FB ID: {account.fb_user_id}
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Connected via:</span>
+                        <Badge variant="secondary">{account.app_key}</Badge>
+                      </div>
+                      <Button variant="outline" size="sm" className="w-full" asChild>
+                        <a href={`https://facebook.com/${account.fb_user_id}`} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          View on Facebook
+                        </a>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </AppLayout>
   );
