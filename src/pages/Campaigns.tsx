@@ -183,9 +183,6 @@ const Campaigns = () => {
                           Pause
                         </Button>
                       ) : null}
-                      <Button size="sm" variant="ghost">
-                        <BarChart3 className="h-4 w-4" />
-                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">

@@ -83,7 +83,7 @@ const Fanpages = () => {
     toast.info(`Starting harvest for ${pageName}...`);
     
     try {
-      // Poll for progress updates
+      // Poll for progress updates every second
       const progressInterval = setInterval(async () => {
         const { data: currentPage } = await supabase
           .from("fanpages")
@@ -92,9 +92,11 @@ const Fanpages = () => {
           .single();
         
         if (currentPage) {
-          setHarvestProgress(currentPage.conversations || 0);
+          const count = currentPage.conversations || 0;
+          setHarvestProgress(count);
+          setHarvestTotal(count);
         }
-      }, 2000);
+      }, 1000);
 
       const { data, error } = await supabase.functions.invoke("harvest-conversations", {
         body: { page_id: pageId },
@@ -104,15 +106,18 @@ const Fanpages = () => {
       
       if (error) throw error;
       
-      setHarvestTotal(data?.count || 0);
-      toast.success(`Harvest completed! Found ${data?.count || 0} conversations`);
+      // Final update
+      const finalCount = data?.count || 0;
+      setHarvestProgress(finalCount);
+      setHarvestTotal(finalCount);
+      toast.success(`Harvest completed! Found ${finalCount} conversations`);
       refetch();
       
-      // Keep dialog open for 3 seconds to show final count
+      // Keep dialog open for 2 seconds to show final count
       setTimeout(() => {
         setShowHarvestDialog(false);
         setHarvestingPageId(null);
-      }, 3000);
+      }, 2000);
     } catch (error: any) {
       setShowHarvestDialog(false);
       setHarvestingPageId(null);
@@ -235,23 +240,18 @@ const Fanpages = () => {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Conversations found:</span>
-                <span className="font-medium">
-                  {harvestTotal > 0 ? harvestTotal.toLocaleString() : harvestProgress.toLocaleString()}
+                <span className="font-medium text-lg">
+                  {harvestProgress.toLocaleString()}
                 </span>
               </div>
-              {harvestTotal === 0 && (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <span className="text-sm text-muted-foreground">
-                    Scanning pages... This may take a while for large fanpages.
-                  </span>
-                </div>
-              )}
-              {harvestTotal > 0 && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <span>✓ Harvest completed successfully!</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">
+                  {harvestProgress === 0 
+                    ? "Starting harvest... This may take a while for large fanpages." 
+                    : "Scanning conversations in real-time..."}
+                </span>
+              </div>
             </div>
           </div>
         </DialogContent>

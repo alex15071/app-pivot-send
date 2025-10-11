@@ -46,7 +46,7 @@ serve(async (req) => {
 
     const pageAccessToken = atob(tokenData.page_access_token_encrypted);
     let totalSaved = 0;
-    let nextUrl = `https://graph.facebook.com/v18.0/${page_id}/conversations?fields=senders,can_reply&limit=100&access_token=${pageAccessToken}`;
+    let nextUrl = `https://graph.facebook.com/v24.0/${page_id}/conversations?fields=senders,can_reply&limit=100&access_token=${pageAccessToken}`;
 
     // Paginate through conversations
     while (nextUrl) {

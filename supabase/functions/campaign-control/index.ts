@@ -303,10 +303,20 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
         messageData.message = { text: message.arguments.text };
       } else if (message.type === 'image') {
         messageData.message = message.arguments;
+      } else if (message.type === 'button') {
+        // Text + Button message
+        messageData.message = {
+          attachment: message.arguments.attachment
+        };
+      } else if (message.type === 'generic') {
+        // Card message
+        messageData.message = {
+          attachment: message.arguments.attachment
+        };
       }
 
       const response = await fetch(
-        `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`,
+        `https://graph.facebook.com/v24.0/me/messages?access_token=${pageAccessToken}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
