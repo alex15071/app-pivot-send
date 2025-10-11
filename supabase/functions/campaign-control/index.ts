@@ -17,19 +17,22 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { action, campaign_id } = await req.json();
+    const { action, campaign_id, offset } = await req.json();
 
-    console.log(`[campaign-control] Action: ${action}, Campaign: ${campaign_id}`);
+    console.log(`[campaign-control] Action: ${action}, Campaign: ${campaign_id}, Offset: ${offset || 0}`);
 
-    if (action === "start") {
-      // Update campaign status
-      await supabaseClient
-        .from('campaigns')
-        .update({ status: 'running' })
-        .eq('id', campaign_id);
+    if (action === "start" || action === "continue") {
+      const startOffset = offset || 0;
+      // Update campaign status (only on start, not continue)
+      if (action === "start") {
+        await supabaseClient
+          .from('campaigns')
+          .update({ status: 'running' })
+          .eq('id', campaign_id);
+      }
 
-      // Start the sending process in background (fire and forget with no await)
-      startCampaignSending(campaign_id).catch(err => 
+      // Start the sending process in background with offset
+      startCampaignSending(campaign_id, startOffset).catch(err => 
         console.error('[campaign-control] Background task error:', err)
       );
 
@@ -61,21 +64,21 @@ serve(async (req) => {
   }
 });
 
-async function startCampaignSending(campaignId: string) {
+async function startCampaignSending(campaignId: string, offset: number = 0) {
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
 
   try {
-    console.log(`[campaign-sending] Starting campaign: ${campaignId}`);
+    console.log(`[campaign-sending] Starting campaign: ${campaignId}, offset: ${offset}`);
 
     // Get campaign details
     const { data: campaign, error: campaignError } = await supabaseClient
       .from('campaigns')
       .select('*, messages(*)')
       .eq('id', campaignId)
-      .single();
+      .maybeSingle();
 
     if (campaignError || !campaign) {
       throw new Error('Campaign not found');
@@ -117,45 +120,48 @@ async function startCampaignSending(campaignId: string) {
 
     console.log(`[campaign-sending] Pacing: ${JSON.stringify(pacingProfile)}`);
 
-    // Get all conversations for selected fanpages (fetch ALL without limit)
-    let allConversations: any[] = [];
-    let from = 0;
-    const pageSize = 1000;
+    // CHUNK-BASED PROCESSING: Process max 1000 messages per invocation to avoid timeout
+    const CHUNK_SIZE = 1000;
     
-    while (true) {
-      const { data: conversations, error } = await supabaseClient
+    // Get total count first (only on first run)
+    if (offset === 0) {
+      const { count } = await supabaseClient
         .from('fanpage_conversations')
-        .select('*')
-        .in('page_id', campaignFanpages.map(f => f.page_id))
-        .range(from, from + pageSize - 1);
+        .select('*', { count: 'exact', head: true })
+        .in('page_id', campaignFanpages.map(f => f.page_id));
       
-      if (error) {
-        console.error('[campaign-sending] Error fetching conversations:', error);
-        break;
+      if (count) {
+        await supabaseClient
+          .from('campaigns')
+          .update({ total_recipients: count })
+          .eq('id', campaignId);
+        console.log(`[campaign-sending] Total recipients: ${count}`);
       }
-      
-      if (!conversations || conversations.length === 0) break;
-      
-      allConversations = allConversations.concat(conversations);
-      console.log(`[campaign-sending] Fetched ${conversations.length} conversations (total: ${allConversations.length})`);
-      
-      if (conversations.length < pageSize) break;
-      from += pageSize;
     }
     
-    const conversations = allConversations;
+    // Fetch only this chunk of conversations
+    const { data: conversations, error: convError } = await supabaseClient
+      .from('fanpage_conversations')
+      .select('*')
+      .in('page_id', campaignFanpages.map(f => f.page_id))
+      .range(offset, offset + CHUNK_SIZE - 1);
+
+    if (convError) {
+      console.error('[campaign-sending] Error fetching conversations:', convError);
+      throw convError;
+    }
 
     if (!conversations || conversations.length === 0) {
-      throw new Error('No conversations found');
+      console.log('[campaign-sending] No more conversations to process');
+      // Mark campaign as finished
+      await supabaseClient
+        .from('campaigns')
+        .update({ status: 'finished' })
+        .eq('id', campaignId);
+      return;
     }
 
-    // Update total recipients
-    await supabaseClient
-      .from('campaigns')
-      .update({ total_recipients: conversations.length })
-      .eq('id', campaignId);
-
-    console.log(`[campaign-sending] Found ${conversations.length} recipients`);
+    console.log(`[campaign-sending] Processing chunk: ${offset}-${offset + conversations.length} (${conversations.length} conversations)`);
 
     // Process in batches with pacing
     const batchSize = pacingProfile.batch_size;
@@ -240,13 +246,41 @@ async function startCampaignSending(campaignId: string) {
       }
     }
 
-    // Mark campaign as finished
-    await supabaseClient
-      .from('campaigns')
-      .update({ status: 'finished' })
-      .eq('id', campaignId);
+    // Check if there are more conversations to process
+    const nextOffset = offset + conversations.length;
+    const { data: moreConversations } = await supabaseClient
+      .from('fanpage_conversations')
+      .select('page_id')
+      .in('page_id', campaignFanpages.map(f => f.page_id))
+      .range(nextOffset, nextOffset)
+      .limit(1);
 
-    console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);
+    if (moreConversations && moreConversations.length > 0) {
+      // More messages to send - reinvoke this function
+      console.log(`[campaign-sending] More messages pending. Reinvoking from offset ${nextOffset}`);
+      
+      // Call campaign-control to continue processing
+      const continueUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/campaign-control`;
+      fetch(continueUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+        },
+        body: JSON.stringify({
+          action: 'continue',
+          campaign_id: campaignId,
+          offset: nextOffset
+        })
+      }).catch(err => console.error('[campaign-sending] Failed to reinvoke:', err));
+    } else {
+      // All done - mark as finished
+      console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);
+      await supabaseClient
+        .from('campaigns')
+        .update({ status: 'finished' })
+        .eq('id', campaignId);
+    }
   } catch (error) {
     console.error('[campaign-sending] Error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';

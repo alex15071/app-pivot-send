@@ -544,6 +544,18 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
                   disabled={createCampaignMutation.isPending}
                   className="mt-1"
                 />
+                {cardImageUrl && (
+                  <div className="mt-3 border rounded-lg overflow-hidden bg-muted">
+                    <img 
+                      src={cardImageUrl} 
+                      alt="Card preview" 
+                      className="w-full h-48 object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <Label htmlFor="card-button-text" className="text-sm">
