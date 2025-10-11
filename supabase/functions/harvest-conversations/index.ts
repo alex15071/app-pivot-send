@@ -83,6 +83,14 @@ serve(async (req) => {
           } else {
             totalSaved += conversations.length;
             console.log(`[harvest-conversations] Saved ${conversations.length} conversations (total: ${totalSaved})`);
+            
+            // Update fanpage count every 100 conversations for real-time progress
+            if (totalSaved % 100 === 0 || totalSaved < 100) {
+              await supabaseClient
+                .from('fanpages')
+                .update({ conversations: totalSaved })
+                .eq('page_id', page_id);
+            }
           }
         }
       }
