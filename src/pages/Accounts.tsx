@@ -65,7 +65,7 @@ const Accounts = () => {
     },
   });
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!selectedApp) {
       toast.error("Please select an app first");
       return;
@@ -74,14 +74,26 @@ const Accounts = () => {
     const app = apps.find((a) => a.key === selectedApp);
     if (!app) return;
 
-    // Redirect directly to Supabase Edge Function
-    const supabaseUrl = "https://ejkndamjsfjdkithuqrj.supabase.co";
-    const redirectUri = `${supabaseUrl}/functions/v1/oauth-callback`;
-    const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${app.fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${selectedApp}&scope=${scope}`;
+    try {
+      // Call edge function to get OAuth URL
+      const { data, error } = await supabase.functions.invoke('oauth-callback', {
+        body: { 
+          action: 'get-auth-url',
+          app_key: selectedApp,
+          fb_app_id: app.fb_app_id 
+        }
+      });
 
-    console.log("OAuth URL:", authUrl);
-    window.location.href = authUrl;
+      if (error) throw error;
+      if (data?.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        throw new Error('No auth URL returned');
+      }
+    } catch (error: any) {
+      console.error('OAuth error:', error);
+      toast.error(`Failed to start OAuth: ${error.message}`);
+    }
   };
 
   return (

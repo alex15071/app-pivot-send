@@ -16,17 +16,38 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Handle POST requests for getting auth URL
+    if (req.method === 'POST') {
+      const { action, app_key, fb_app_id } = await req.json();
+      
+      if (action === 'get-auth-url') {
+        const redirectUri = `https://ejkndamjsfjdkithuqrj.supabase.co/functions/v1/oauth-callback`;
+        const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement";
+        const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${fb_app_id}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${app_key}&scope=${scope}&response_type=code`;
+        
+        return new Response(
+          JSON.stringify({ authUrl }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // Handle GET requests from Facebook OAuth callback
     const url = new URL(req.url);
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state'); // app_key
     const error = url.searchParams.get('error');
 
-    console.log('[oauth-callback] Received request:', {
+    console.log('[oauth-callback] Received OAuth callback:', {
       method: req.method,
       code: code ? 'present' : 'missing',
       state: state || 'missing',
-      error: error || 'none',
-      fullUrl: req.url
+      error: error || 'none'
     });
 
     if (error) {
@@ -34,7 +55,6 @@ serve(async (req) => {
       return new Response(null, {
         status: 302,
         headers: {
-          ...corsHeaders,
           'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(`Facebook error: ${error}`)}`,
         },
       });
@@ -45,16 +65,10 @@ serve(async (req) => {
       return new Response(null, {
         status: 302,
         headers: {
-          ...corsHeaders,
           'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent('Invalid OAuth callback - missing code or app key')}`,
         },
       });
     }
-
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
 
     // Get app details
     const { data: app, error: appError } = await supabaseClient
@@ -156,7 +170,6 @@ serve(async (req) => {
     return new Response(null, {
       status: 302,
       headers: {
-        ...corsHeaders,
         'Location': `https://app-pivot-send.lovable.app/accounts`,
       },
     });
@@ -169,7 +182,6 @@ serve(async (req) => {
     return new Response(null, {
       status: 302,
       headers: {
-        ...corsHeaders,
         'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(message)}`,
       },
     });
