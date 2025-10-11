@@ -236,14 +236,31 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
 
     if (!conversations || conversations.length === 0) {
       console.log('[campaign-sending] No more conversations to process');
-      // Mark campaign as finished and clear stats
-      await supabaseClient
-        .from('campaigns')
-        .update({ 
-          status: 'finished',
-          current_page_stats: []
-        })
-        .eq('id', campaignId);
+      
+      if (messageSequenceId) {
+        // Mark sequence message as completed
+        await supabaseClient
+          .from('message_sequences')
+          .update({ 
+            status: 'sent',
+            sent_count: 0,
+            delivered_count: 0,
+            failed_count: 0
+          })
+          .eq('id', messageSequenceId);
+        
+        console.log(`[campaign-sending] Sequence message ${messageSequenceId} completed with no conversations`);
+      } else {
+        // Mark regular campaign as finished and clear stats
+        await supabaseClient
+          .from('campaigns')
+          .update({ 
+            status: 'finished',
+            current_page_stats: []
+          })
+          .eq('id', campaignId);
+      }
+      
       return;
     }
 
@@ -346,6 +363,18 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
       
       if (updateError) {
         console.error('[campaign-sending] Error updating stats:', updateError);
+      }
+
+      // If processing a sequence message, also update its stats
+      if (messageSequenceId) {
+        await supabaseClient
+          .from('message_sequences')
+          .update({
+            sent_count: processed,
+            delivered_count: delivered,
+            failed_count: failed
+          })
+          .eq('id', messageSequenceId);
       }
 
       // Calculate error ratio
