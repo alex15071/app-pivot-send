@@ -315,7 +315,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           delay_minutes: card.delay_minutes,
           sequence_order: idx + 1,
           scheduled_for: idx === 0 ? now.toISOString() : scheduledFor.toISOString(),
-          status: idx === 0 ? 'pending' : 'scheduled',
+          status: 'scheduled',
           app_key: card.app_key,
         };
       });
