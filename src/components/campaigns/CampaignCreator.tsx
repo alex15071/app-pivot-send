@@ -41,9 +41,16 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
   const [selectedFanpages, setSelectedFanpages] = useState<string[]>([]);
   const [selectedApp, setSelectedApp] = useState("");
   const [selectedPacingProfile, setSelectedPacingProfile] = useState("");
-  const [messageType, setMessageType] = useState<"text" | "image">("text");
+  const [messageType, setMessageType] = useState<"text" | "image" | "text_button" | "card">("text");
   const [messageText, setMessageText] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [buttonText, setButtonText] = useState("");
+  const [buttonUrl, setButtonUrl] = useState("");
+  const [cardTitle, setCardTitle] = useState("");
+  const [cardSubtitle, setCardSubtitle] = useState("");
+  const [cardImageUrl, setCardImageUrl] = useState("");
+  const [cardButtonText, setCardButtonText] = useState("");
+  const [cardButtonUrl, setCardButtonUrl] = useState("");
   const queryClient = useQueryClient();
 
   const { data: fanpages = [], isLoading: loadingFanpages } = useQuery<Fanpage[]>({
@@ -97,6 +104,16 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
     if (messageType === "image" && !imageUrl.trim()) {
       return "Please enter an image URL";
     }
+    if (messageType === "text_button") {
+      if (!buttonText.trim()) return "Please enter button text";
+      if (!buttonUrl.trim()) return "Please enter button URL";
+    }
+    if (messageType === "card") {
+      if (!cardTitle.trim()) return "Please enter card title";
+      if (!cardImageUrl.trim()) return "Please enter card image URL";
+      if (!cardButtonText.trim()) return "Please enter card button text";
+      if (!cardButtonUrl.trim()) return "Please enter card button URL";
+    }
     return null;
   };
 
@@ -146,22 +163,66 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
       }
 
       // Step 3: Create message
-      const messageArgs = messageType === "text" 
-        ? { text: messageText.trim() }
-        : { 
-            attachment: { 
-              type: "image", 
-              payload: { url: imageUrl.trim() } 
-            }, 
-            text: messageText.trim() 
-          };
+      let messageArgs;
+      
+      if (messageType === "text") {
+        messageArgs = { text: messageText.trim() };
+      } else if (messageType === "image") {
+        messageArgs = { 
+          attachment: { 
+            type: "image", 
+            payload: { url: imageUrl.trim() } 
+          }, 
+          text: messageText.trim() 
+        };
+      } else if (messageType === "text_button") {
+        messageArgs = {
+          text: messageText.trim(),
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "button",
+              text: messageText.trim(),
+              buttons: [{
+                type: "web_url",
+                url: buttonUrl.trim(),
+                title: buttonText.trim()
+              }]
+            }
+          }
+        };
+      } else if (messageType === "card") {
+        messageArgs = {
+          attachment: {
+            type: "template",
+            payload: {
+              template_type: "generic",
+              elements: [{
+                title: cardTitle.trim(),
+                subtitle: cardSubtitle.trim(),
+                image_url: cardImageUrl.trim(),
+                buttons: [{
+                  type: "web_url",
+                  url: cardButtonUrl.trim(),
+                  title: cardButtonText.trim()
+                }]
+              }]
+            }
+          }
+        };
+      }
+
+      // Map message type to database enum
+      const dbMessageType = messageType === "text_button" ? "button" : 
+                            messageType === "card" ? "generic" : 
+                            messageType;
 
       const { error: messageError } = await supabase
         .from("messages")
         .insert({
           campaign_id: campaign.id,
-          type: messageType,
-          arguments: messageArgs,
+          type: dbMessageType as any,
+          arguments: messageArgs as any,
           sent: 0,
         });
 
@@ -192,6 +253,14 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
     );
   };
 
+  const toggleAllFanpages = () => {
+    if (selectedFanpages.length === fanpages.length) {
+      setSelectedFanpages([]);
+    } else {
+      setSelectedFanpages(fanpages.map(p => p.page_id));
+    }
+  };
+
   if (isLoadingData) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -218,12 +287,23 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
         </div>
 
         <div>
-          <Label>
-            Select Fanpages <span className="text-destructive">*</span>
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({selectedFanpages.length} selected)
-            </span>
-          </Label>
+          <div className="flex items-center justify-between">
+            <Label>
+              Select Fanpages <span className="text-destructive">*</span>
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({selectedFanpages.length} selected)
+              </span>
+            </Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggleAllFanpages}
+              disabled={createCampaignMutation.isPending || fanpages.length === 0}
+            >
+              {selectedFanpages.length === fanpages.length ? "Deselect All" : "Select All"}
+            </Button>
+          </div>
           <Card className="mt-2">
             <CardContent className="p-4 max-h-64 overflow-y-auto">
               {fanpages.length === 0 ? (
@@ -319,15 +399,21 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
           </Label>
           <Tabs 
             value={messageType} 
-            onValueChange={(v) => setMessageType(v as "text" | "image")} 
+            onValueChange={(v) => setMessageType(v as "text" | "image" | "text_button" | "card")} 
             className="mt-2"
           >
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="text" disabled={createCampaignMutation.isPending}>
-                Text Message
+                Text
               </TabsTrigger>
               <TabsTrigger value="image" disabled={createCampaignMutation.isPending}>
-                Image Message
+                Image
+              </TabsTrigger>
+              <TabsTrigger value="text_button" disabled={createCampaignMutation.isPending}>
+                Text + Button
+              </TabsTrigger>
+              <TabsTrigger value="card" disabled={createCampaignMutation.isPending}>
+                Card
               </TabsTrigger>
             </TabsList>
             <TabsContent value="text" className="space-y-2 mt-4">
@@ -369,6 +455,115 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
                   rows={3}
                   disabled={createCampaignMutation.isPending}
                   className="resize-none mt-1"
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="text_button" className="space-y-3 mt-4">
+              <div>
+                <Label htmlFor="button-text-msg" className="text-sm">
+                  Message Text <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="button-text-msg"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Enter your message text..."
+                  rows={3}
+                  disabled={createCampaignMutation.isPending}
+                  className="resize-none mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="button-text" className="text-sm">
+                  Button Text <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="button-text"
+                  value={buttonText}
+                  onChange={(e) => setButtonText(e.target.value)}
+                  placeholder="e.g., Visit Website"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="button-url" className="text-sm">
+                  Button URL <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="button-url"
+                  value={buttonUrl}
+                  onChange={(e) => setButtonUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="card" className="space-y-3 mt-4">
+              <div>
+                <Label htmlFor="card-title" className="text-sm">
+                  Card Title <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="card-title"
+                  value={cardTitle}
+                  onChange={(e) => setCardTitle(e.target.value)}
+                  placeholder="Enter card title"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="card-subtitle" className="text-sm">
+                  Card Subtitle (optional)
+                </Label>
+                <Input
+                  id="card-subtitle"
+                  value={cardSubtitle}
+                  onChange={(e) => setCardSubtitle(e.target.value)}
+                  placeholder="Enter card subtitle"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="card-image-url" className="text-sm">
+                  Card Image URL <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="card-image-url"
+                  value={cardImageUrl}
+                  onChange={(e) => setCardImageUrl(e.target.value)}
+                  placeholder="https://example.com/image.jpg"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="card-button-text" className="text-sm">
+                  Button Text <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="card-button-text"
+                  value={cardButtonText}
+                  onChange={(e) => setCardButtonText(e.target.value)}
+                  placeholder="e.g., Learn More"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="card-button-url" className="text-sm">
+                  Button URL <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="card-button-url"
+                  value={cardButtonUrl}
+                  onChange={(e) => setCardButtonUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  disabled={createCampaignMutation.isPending}
+                  className="mt-1"
                 />
               </div>
             </TabsContent>
