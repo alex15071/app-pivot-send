@@ -218,11 +218,26 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
         if (!card.button_title.trim()) {
           throw new Error("Todas las cards deben tener texto de botón");
         }
+        if (!card.app_key.trim()) {
+          throw new Error("Todas las cards deben tener una app seleccionada");
+        }
       }
 
       const [hours, minutes] = startTime.split(':').map(Number);
       const startDateTime = new Date(startDate);
       startDateTime.setHours(hours, minutes, 0, 0);
+
+      // Calculate total_recipients by summing conversations from selected fanpages
+      const { data: fanpageData, error: fanpageQueryError } = await supabase
+        .from("fanpages")
+        .select("conversations")
+        .in("page_id", selectedFanpages);
+
+      if (fanpageQueryError) {
+        throw new Error(`Error al obtener fanpages: ${fanpageQueryError.message}`);
+      }
+
+      const totalRecipients = fanpageData?.reduce((sum, fp) => sum + (fp.conversations || 0), 0) || 0;
 
       // Create campaign as sequence
       const { data: campaign, error: campaignError } = await supabase
@@ -233,7 +248,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           is_sequence: true,
           sequence_start_at: startDateTime.toISOString(),
           pacing_profile_id: selectedPacingProfile || null,
-          total_recipients: 0,
+          total_recipients: totalRecipients,
           processed: 0,
           delivered: 0,
           failed: 0,
@@ -259,10 +274,16 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       }
 
       // Calculate scheduled_for times for each card
+      const now = new Date();
       let cumulativeMinutes = 0;
       const sequenceMessages = cards.map((card, idx) => {
         const scheduledFor = new Date(startDateTime);
         scheduledFor.setMinutes(scheduledFor.getMinutes() + cumulativeMinutes);
+        
+        // First message: send immediately if start time is now or in the past
+        const finalScheduledFor = idx === 0 && startDateTime <= now 
+          ? now.toISOString() 
+          : scheduledFor.toISOString();
         
         if (idx < cards.length - 1) {
           cumulativeMinutes += cards[idx + 1].delay_minutes;
@@ -298,8 +319,9 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           message_arguments: messageArgs,
           delay_minutes: card.delay_minutes,
           sequence_order: idx + 1,
-          scheduled_for: scheduledFor.toISOString(),
+          scheduled_for: finalScheduledFor,
           status: 'scheduled',
+          app_key: card.app_key,
         };
       });
 

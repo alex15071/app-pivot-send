@@ -135,6 +135,7 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
 
     // Handle sequence message or regular message
     let message;
+    let sequenceAppKey;
     if (messageSequenceId) {
       // For sequences, fetch the specific message from message_sequences
       const { data: seqMessage, error: seqError } = await supabaseClient
@@ -153,7 +154,8 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
         type: seqMessage.message_type,
         arguments: seqMessage.message_arguments,
       };
-      console.log(`[campaign-sending] Using sequence message ${messageSequenceId} (order: ${seqMessage.sequence_order})`);
+      sequenceAppKey = seqMessage.app_key; // Get the app_key from sequence message
+      console.log(`[campaign-sending] Using sequence message ${messageSequenceId} (order: ${seqMessage.sequence_order}, app: ${sequenceAppKey || 'default'})`);
     } else {
       // Regular campaign message
       message = campaign.messages?.[0];
@@ -254,8 +256,8 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
         if (start >= conversations.length) break;
 
         const batch = conversations.slice(start, end);
-        // Pass message to sendBatch via modified campaign
-        const campaignWithMessage = { ...campaign, messages: [message] };
+        // Pass message and sequence app_key to sendBatch via modified campaign
+        const campaignWithMessage = { ...campaign, messages: [message], sequence_app_key: sequenceAppKey };
         batchPromises.push(sendBatch(supabaseClient, campaignId, campaignWithMessage, batch, pacingProfile));
       }
 
@@ -446,7 +448,8 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
   for (const [pageId, pageConversations] of conversationsByPage) {
     try {
       // Get token for this page (once per page instead of per conversation)
-      const appKey = campaign.active_app_key || 
+      // Use sequence app_key if available, otherwise campaign active_app_key or fanpage active_app_key
+      const appKey = campaign.sequence_app_key || campaign.active_app_key || 
         (await supabaseClient.from('fanpages').select('active_app_key').eq('page_id', pageId).maybeSingle()).data?.active_app_key;
 
       if (!appKey) {

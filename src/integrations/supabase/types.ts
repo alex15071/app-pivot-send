@@ -314,6 +314,7 @@ export type Database = {
       }
       message_sequences: {
         Row: {
+          app_key: string | null
           campaign_id: string
           created_at: string | null
           delay_minutes: number
@@ -329,6 +330,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          app_key?: string | null
           campaign_id: string
           created_at?: string | null
           delay_minutes?: number
@@ -344,6 +346,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          app_key?: string | null
           campaign_id?: string
           created_at?: string | null
           delay_minutes?: number

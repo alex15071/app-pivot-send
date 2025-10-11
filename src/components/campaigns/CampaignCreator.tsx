@@ -152,6 +152,78 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
 
   const isLoadingData = loadingFanpages || loadingApps || loadingProfiles || isLoadingCampaignData;
 
+  // Function to duplicate a sequence campaign
+  const duplicateSequence = async () => {
+    if (!campaign?.id) throw new Error("No campaign to duplicate");
+
+    // Create new campaign
+    const { data: newCampaign, error: campaignError } = await supabase
+      .from("campaigns")
+      .insert({
+        name: campaignName.trim(),
+        status: "scheduled",
+        is_sequence: true,
+        sequence_start_at: campaign.sequence_start_at,
+        pacing_profile_id: selectedPacingProfile || null,
+        active_app_key: selectedApp || null,
+        total_recipients: campaign.total_recipients,
+      })
+      .select()
+      .single();
+
+    if (campaignError || !newCampaign) {
+      throw new Error(campaignError?.message || "Failed to create campaign");
+    }
+
+    // Copy fanpage links
+    const fanpageLinks = selectedFanpages.map(page_id => ({
+      campaign_id: newCampaign.id,
+      page_id,
+    }));
+
+    const { error: fanpageError } = await supabase
+      .from("campaign_fanpages")
+      .insert(fanpageLinks);
+
+    if (fanpageError) {
+      throw new Error(`Failed to link fanpages: ${fanpageError.message}`);
+    }
+
+    // Copy message sequences
+    const { data: sequences, error: seqError } = await supabase
+      .from("message_sequences")
+      .select("*")
+      .eq("campaign_id", campaign.id)
+      .order("sequence_order");
+
+    if (seqError) {
+      throw new Error(`Failed to fetch sequences: ${seqError.message}`);
+    }
+
+    if (sequences && sequences.length > 0) {
+      const newSequences = sequences.map(seq => ({
+        campaign_id: newCampaign.id,
+        message_type: seq.message_type,
+        message_arguments: seq.message_arguments,
+        delay_minutes: seq.delay_minutes,
+        sequence_order: seq.sequence_order,
+        scheduled_for: seq.scheduled_for,
+        status: "scheduled",
+        app_key: seq.app_key,
+      }));
+
+      const { error: insertSeqError } = await supabase
+        .from("message_sequences")
+        .insert(newSequences);
+
+      if (insertSeqError) {
+        throw new Error(`Failed to create sequences: ${insertSeqError.message}`);
+      }
+    }
+
+    return newCampaign;
+  };
+
   const validateForm = (): string | null => {
     if (!campaignName.trim()) {
       return "Please enter a campaign name";
@@ -184,6 +256,11 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
       const validationError = validateForm();
       if (validationError) {
         throw new Error(validationError);
+      }
+
+      // If duplicating a sequence, handle specially
+      if (mode === 'duplicate' && campaign?.is_sequence) {
+        return await duplicateSequence();
       }
 
       // Step 1: Update or Create campaign
