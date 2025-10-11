@@ -84,8 +84,8 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
   });
 
   const addCard = () => {
-    if (cards.length >= 10) {
-      toast.error("Máximo 10 cards por campaña (límite de Facebook)");
+    if (cards.length >= 20) {
+      toast.error("Máximo 20 cards por campaña");
       return;
     }
     setCards([
@@ -259,7 +259,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       <div>
         <h3 className="text-lg font-semibold">Crear Cards en Masa</h3>
         <p className="text-sm text-muted-foreground">
-          Crea hasta 10 cards en un solo mensaje (límite de Facebook)
+          Crea hasta 20 cards en un solo mensaje
         </p>
       </div>
 
@@ -414,8 +414,8 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       {/* Cards List */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label className="text-base font-semibold">Cards ({cards.length}/10)</Label>
-          <Button size="sm" variant="outline" onClick={addCard} disabled={cards.length >= 10}>
+          <Label className="text-base font-semibold">Cards ({cards.length}/20)</Label>
+          <Button size="sm" variant="outline" onClick={addCard} disabled={cards.length >= 20}>
             <Plus className="h-4 w-4 mr-1" />
             Agregar Card
           </Button>
