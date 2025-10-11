@@ -29,6 +29,43 @@ serve(async (req) => {
     if (action === "start" || action === "continue") {
       const startOffset = offset || 0;
       
+      // Check if this is a sequence campaign
+      const { data: campaign } = await supabaseClient
+        .from('campaigns')
+        .select('is_sequence')
+        .eq('id', campaign_id)
+        .single();
+
+      // For sequence campaigns on start, trigger the scheduler immediately
+      if (action === "start" && campaign?.is_sequence) {
+        console.log('[campaign-control] Starting sequence campaign, triggering scheduler');
+        
+        // Update campaign status to running
+        await supabaseClient
+          .from('campaigns')
+          .update({ status: 'running' })
+          .eq('id', campaign_id);
+
+        // Invoke the sequence scheduler to process any ready messages
+        const schedulerPromise = supabaseClient.functions.invoke('sequence-scheduler', {
+          body: {}
+        }).then(({ data, error }) => {
+          if (error) {
+            console.error('[campaign-control] Error invoking sequence-scheduler:', error);
+          } else {
+            console.log('[campaign-control] Sequence scheduler triggered:', data);
+          }
+        });
+
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+          EdgeRuntime.waitUntil(schedulerPromise);
+        }
+
+        return new Response(JSON.stringify({ success: true, message: 'Sequence started, scheduler triggered' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
       // For regular campaigns, update status on start
       if (action === "start" && !message_sequence_id) {
         await supabaseClient
