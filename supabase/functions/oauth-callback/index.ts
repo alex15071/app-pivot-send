@@ -44,7 +44,7 @@ serve(async (req) => {
     console.log(`[oauth-callback] Processing OAuth for app: ${app.key}`);
 
     // Exchange code for access token
-    const redirectUri = `${url.origin}/oauth/callback`;
+    const redirectUri = `https://ejkndamjsfjdkithuqrj.supabase.co/functions/v1/oauth-callback`;
     const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${app.fb_app_id}&client_secret=${atob(app.fb_app_secret_encrypted)}&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
     const tokenResponse = await fetch(tokenUrl);
@@ -131,7 +131,7 @@ serve(async (req) => {
       status: 302,
       headers: {
         ...corsHeaders,
-        'Location': `${url.origin}/accounts`,
+        'Location': `https://app-pivot-send.lovable.app/accounts`,
       },
     });
   } catch (error) {
@@ -144,7 +144,7 @@ serve(async (req) => {
       status: 302,
       headers: {
         ...corsHeaders,
-        'Location': `${url.origin}/accounts?error=${encodeURIComponent(message)}`,
+        'Location': `https://app-pivot-send.lovable.app/accounts?error=${encodeURIComponent(message)}`,
       },
     });
   }
