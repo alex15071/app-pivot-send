@@ -30,10 +30,46 @@ serve(async (req) => {
       const startOffset = offset || 0;
       // Update campaign status (only on start, not continue)
       if (action === "start") {
-        await supabaseClient
+        // Check if this is a sequence campaign
+        const { data: campaign } = await supabaseClient
           .from('campaigns')
-          .update({ status: 'running' })
-          .eq('id', campaign_id);
+          .select('is_sequence')
+          .eq('id', campaign_id)
+          .single();
+
+        if (campaign?.is_sequence) {
+          // For sequences, find any pending messages and send them immediately
+          const { data: pendingMessages } = await supabaseClient
+            .from('message_sequences')
+            .select('id')
+            .eq('campaign_id', campaign_id)
+            .eq('status', 'pending')
+            .order('sequence_order', { ascending: true });
+
+          if (pendingMessages && pendingMessages.length > 0) {
+            // Send all pending messages (usually just the first one)
+            for (const msg of pendingMessages) {
+              console.log(`[campaign-control] Sending pending message ${msg.id}`);
+              const sendingPromise = startCampaignSending(campaign_id, 0, msg.id).catch(err => 
+                console.error('[campaign-control] Error sending pending message:', err)
+              );
+              
+              if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+                EdgeRuntime.waitUntil(sendingPromise);
+              }
+            }
+            
+            return new Response(JSON.stringify({ success: true, message: 'Pending messages started' }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        } else {
+          // Regular campaign
+          await supabaseClient
+            .from('campaigns')
+            .update({ status: 'running' })
+            .eq('id', campaign_id);
+        }
       }
 
       // Start the sending process in background with offset using waitUntil

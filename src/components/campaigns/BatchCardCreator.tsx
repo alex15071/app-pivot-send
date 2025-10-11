@@ -239,12 +239,12 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
 
       const totalRecipients = fanpageData?.reduce((sum, fp) => sum + (fp.conversations || 0), 0) || 0;
 
-      // Create campaign as sequence
+      // Create campaign as sequence - set to running so first message sends immediately
       const { data: campaign, error: campaignError } = await supabase
         .from("campaigns")
-        .insert({
+        .insert([{
           name: campaignName.trim(),
-          status: "scheduled",
+          status: "running",
           is_sequence: true,
           sequence_start_at: startDateTime.toISOString(),
           pacing_profile_id: selectedPacingProfile || null,
@@ -252,7 +252,7 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           processed: 0,
           delivered: 0,
           failed: 0,
-        })
+        }])
         .select()
         .single();
 
@@ -279,11 +279,6 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
       const sequenceMessages = cards.map((card, idx) => {
         const scheduledFor = new Date(startDateTime);
         scheduledFor.setMinutes(scheduledFor.getMinutes() + cumulativeMinutes);
-        
-        // First message: send immediately if start time is now or in the past
-        const finalScheduledFor = idx === 0 && startDateTime <= now 
-          ? now.toISOString() 
-          : scheduledFor.toISOString();
         
         if (idx < cards.length - 1) {
           cumulativeMinutes += cards[idx + 1].delay_minutes;
@@ -319,8 +314,8 @@ export function BatchCardCreator({ onClose }: BatchCardCreatorProps) {
           message_arguments: messageArgs,
           delay_minutes: card.delay_minutes,
           sequence_order: idx + 1,
-          scheduled_for: finalScheduledFor,
-          status: 'scheduled',
+          scheduled_for: idx === 0 ? now.toISOString() : scheduledFor.toISOString(),
+          status: idx === 0 ? 'pending' : 'scheduled',
           app_key: card.app_key,
         };
       });
