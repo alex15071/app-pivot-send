@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import CampaignCreator from "@/components/campaigns/CampaignCreator";
+import { SequenceCreator } from "@/components/campaigns/SequenceCreator";
 
 interface Campaign {
   id: string;
@@ -23,6 +24,8 @@ interface Campaign {
   failed: number;
   created_at: string;
   current_offset?: number;
+  is_sequence?: boolean;
+  current_sequence_step?: number;
   current_page_stats?: Array<{
     page_id: string;
     page_name: string;
@@ -34,6 +37,8 @@ const Campaigns = () => {
   const [open, setOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [mode, setMode] = useState<'create' | 'edit' | 'duplicate'>('create');
+  const [showSequenceCreator, setShowSequenceCreator] = useState(false);
+  const [sequenceCampaign, setSequenceCampaign] = useState<Campaign | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -244,9 +249,16 @@ const Campaigns = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
                           <CardTitle>{campaign.name}</CardTitle>
-                          <Badge variant="secondary" className={getStatusColor(campaign.status)}>
-                            {campaign.status}
-                          </Badge>
+                          <div className="flex gap-2">
+                            <Badge variant="secondary" className={getStatusColor(campaign.status)}>
+                              {campaign.status}
+                            </Badge>
+                            {campaign.is_sequence && (
+                              <Badge variant="outline" className="bg-purple-500/10">
+                                Secuencia {campaign.current_sequence_step || 0}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <CardDescription className="mt-2">
                           {campaign.total_recipients.toLocaleString()} recipients
@@ -298,6 +310,18 @@ const Campaigns = () => {
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
+                        {campaign.status === 'draft' && !campaign.is_sequence && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSequenceCampaign(campaign);
+                              setShowSequenceCreator(true);
+                            }}
+                          >
+                            Secuencia
+                          </Button>
+                        )}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
@@ -374,6 +398,24 @@ const Campaigns = () => {
           </div>
         )}
       </div>
+
+      <Dialog open={showSequenceCreator} onOpenChange={setShowSequenceCreator}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear Secuencia de Mensajes</DialogTitle>
+          </DialogHeader>
+          {sequenceCampaign && (
+            <SequenceCreator
+              campaignId={sequenceCampaign.id}
+              campaignName={sequenceCampaign.name}
+              onClose={() => {
+                setShowSequenceCreator(false);
+                setSequenceCampaign(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };

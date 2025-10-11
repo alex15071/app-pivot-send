@@ -22,9 +22,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { action, campaign_id, offset } = await req.json();
+    const { action, campaign_id, offset, message_sequence_id } = await req.json();
 
-    console.log(`[campaign-control] Action: ${action}, Campaign: ${campaign_id}, Offset: ${offset || 0}`);
+    console.log(`[campaign-control] Action: ${action}, Campaign: ${campaign_id}, Offset: ${offset || 0}, Sequence Message: ${message_sequence_id || 'none'}`);
 
     if (action === "start" || action === "continue") {
       const startOffset = offset || 0;
@@ -37,7 +37,7 @@ serve(async (req) => {
       }
 
       // Start the sending process in background with offset using waitUntil
-      const sendingPromise = startCampaignSending(campaign_id, startOffset).catch(err => 
+      const sendingPromise = startCampaignSending(campaign_id, startOffset, message_sequence_id).catch(err => 
         console.error('[campaign-control] Background task error:', err)
       );
       
@@ -77,7 +77,7 @@ serve(async (req) => {
   }
 });
 
-async function startCampaignSending(campaignId: string, offset: number = 0) {
+async function startCampaignSending(campaignId: string, offset: number = 0, messageSequenceId?: string) {
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -132,6 +132,36 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
     }
 
     console.log(`[campaign-sending] Pacing: ${JSON.stringify(pacingProfile)}`);
+
+    // Handle sequence message or regular message
+    let message;
+    if (messageSequenceId) {
+      // For sequences, fetch the specific message from message_sequences
+      const { data: seqMessage, error: seqError } = await supabaseClient
+        .from('message_sequences')
+        .select('*')
+        .eq('id', messageSequenceId)
+        .maybeSingle();
+
+      if (seqError || !seqMessage) {
+        console.error('[campaign-sending] Sequence message not found:', seqError);
+        await supabaseClient.from('message_sequences').update({ status: 'failed' }).eq('id', messageSequenceId);
+        return;
+      }
+
+      message = {
+        type: seqMessage.message_type,
+        arguments: seqMessage.message_arguments,
+      };
+      console.log(`[campaign-sending] Using sequence message ${messageSequenceId} (order: ${seqMessage.sequence_order})`);
+    } else {
+      // Regular campaign message
+      message = campaign.messages?.[0];
+      if (!message) {
+        console.error('[campaign-sending] No message found for campaign');
+        return;
+      }
+    }
 
     // CHUNK-BASED PROCESSING: Process max 1000 messages per invocation to avoid timeout
     const CHUNK_SIZE = 1000;
@@ -224,7 +254,9 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
         if (start >= conversations.length) break;
 
         const batch = conversations.slice(start, end);
-        batchPromises.push(sendBatch(supabaseClient, campaignId, campaign, batch, pacingProfile));
+        // Pass message to sendBatch via modified campaign
+        const campaignWithMessage = { ...campaign, messages: [message] };
+        batchPromises.push(sendBatch(supabaseClient, campaignId, campaignWithMessage, batch, pacingProfile));
       }
 
       const results = await Promise.allSettled(batchPromises);
@@ -324,7 +356,8 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
         body: JSON.stringify({
           action: 'continue',
           campaign_id: campaignId,
-          offset: nextOffset
+          offset: nextOffset,
+          message_sequence_id: messageSequenceId
         })
       }).then(res => {
         if (!res.ok) {
@@ -334,15 +367,49 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
         }
       }).catch(err => console.error('[campaign-sending] Reinvoke error:', err));
     } else {
-      // All done - mark as finished and clear stats
-      console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);
-      await supabaseClient
-        .from('campaigns')
-        .update({ 
-          status: 'finished',
-          current_page_stats: []
-        })
-        .eq('id', campaignId);
+      // Update status based on whether this is a sequence or regular campaign
+      if (messageSequenceId) {
+        // Mark sequence message as sent
+        await supabaseClient
+          .from('message_sequences')
+          .update({
+            status: 'sent',
+            sent_count: processed,
+            delivered_count: delivered,
+            failed_count: failed,
+          })
+          .eq('id', messageSequenceId);
+
+        // Update campaign's current_sequence_step
+        const { data: seqData } = await supabaseClient
+          .from('message_sequences')
+          .select('sequence_order')
+          .eq('id', messageSequenceId)
+          .maybeSingle();
+        
+        if (seqData) {
+          await supabaseClient
+            .from('campaigns')
+            .update({ current_sequence_step: seqData.sequence_order })
+            .eq('id', campaignId);
+        }
+
+        console.log(`[campaign-sending] Sequence message ${messageSequenceId} finished. Delivered: ${delivered}, Failed: ${failed}`);
+      } else {
+        // Regular campaign finished
+        await supabaseClient
+          .from('campaigns')
+          .update({
+            status: 'finished',
+            processed,
+            delivered,
+            failed,
+            current_page_stats: []
+          })
+          .eq('id', campaignId);
+
+        console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);
+      }
     }
   } catch (error) {
     console.error('[campaign-sending] Error:', error);
@@ -360,8 +427,8 @@ async function sendBatch(supabaseClient: any, campaignId: string, campaign: any,
   let failed = 0;
   let errors = 0;
 
-  // Get message
-  const message = campaign.messages[0];
+  // Message should already be set in startCampaignSending and passed via campaign
+  const message = campaign.messages?.[0];
   if (!message) {
     throw new Error('No message found');
   }

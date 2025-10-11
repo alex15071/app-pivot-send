@@ -124,12 +124,15 @@ export type Database = {
           created_at: string | null
           current_offset: number | null
           current_page_stats: Json | null
+          current_sequence_step: number | null
           delivered: number | null
           failed: number | null
           id: string
+          is_sequence: boolean | null
           name: string
           pacing_profile_id: string | null
           processed: number | null
+          sequence_start_at: string | null
           status: Database["public"]["Enums"]["campaign_status"] | null
           total_recipients: number | null
           updated_at: string | null
@@ -139,12 +142,15 @@ export type Database = {
           created_at?: string | null
           current_offset?: number | null
           current_page_stats?: Json | null
+          current_sequence_step?: number | null
           delivered?: number | null
           failed?: number | null
           id?: string
+          is_sequence?: boolean | null
           name: string
           pacing_profile_id?: string | null
           processed?: number | null
+          sequence_start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"] | null
           total_recipients?: number | null
           updated_at?: string | null
@@ -154,12 +160,15 @@ export type Database = {
           created_at?: string | null
           current_offset?: number | null
           current_page_stats?: Json | null
+          current_sequence_step?: number | null
           delivered?: number | null
           failed?: number | null
           id?: string
+          is_sequence?: boolean | null
           name?: string
           pacing_profile_id?: string | null
           processed?: number | null
+          sequence_start_at?: string | null
           status?: Database["public"]["Enums"]["campaign_status"] | null
           total_recipients?: number | null
           updated_at?: string | null
@@ -300,6 +309,62 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "apps"
             referencedColumns: ["key"]
+          },
+        ]
+      }
+      message_sequences: {
+        Row: {
+          campaign_id: string
+          created_at: string | null
+          delay_minutes: number
+          delivered_count: number | null
+          failed_count: number | null
+          id: string
+          message_arguments: Json
+          message_type: string
+          scheduled_for: string | null
+          sent_count: number | null
+          sequence_order: number
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string | null
+          delay_minutes?: number
+          delivered_count?: number | null
+          failed_count?: number | null
+          id?: string
+          message_arguments?: Json
+          message_type: string
+          scheduled_for?: string | null
+          sent_count?: number | null
+          sequence_order: number
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string | null
+          delay_minutes?: number
+          delivered_count?: number | null
+          failed_count?: number | null
+          id?: string
+          message_arguments?: Json
+          message_type?: string
+          scheduled_for?: string | null
+          sent_count?: number | null
+          sequence_order?: number
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_sequences_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -522,7 +587,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
-      campaign_status: "draft" | "running" | "paused" | "finished"
+      campaign_status: "draft" | "running" | "paused" | "finished" | "scheduled"
       message_type:
         | "text"
         | "image"
@@ -659,7 +724,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
-      campaign_status: ["draft", "running", "paused", "finished"],
+      campaign_status: ["draft", "running", "paused", "finished", "scheduled"],
       message_type: [
         "text",
         "image",
