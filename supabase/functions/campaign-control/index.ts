@@ -305,18 +305,24 @@ async function startCampaignSending(campaignId: string, offset: number = 0) {
       
       // Call campaign-control to continue processing
       const continueUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/campaign-control`;
-      fetch(continueUrl, {
+      await fetch(continueUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
         },
         body: JSON.stringify({
           action: 'continue',
           campaign_id: campaignId,
           offset: nextOffset
         })
-      }).catch(err => console.error('[campaign-sending] Failed to reinvoke:', err));
+      }).then(res => {
+        if (!res.ok) {
+          console.error('[campaign-sending] Failed to reinvoke:', res.status, res.statusText);
+        } else {
+          console.log('[campaign-sending] Successfully reinvoked');
+        }
+      }).catch(err => console.error('[campaign-sending] Reinvoke error:', err));
     } else {
       // All done - mark as finished and clear stats
       console.log(`[campaign-sending] Campaign finished. Total delivered: ${delivered}, Failed: ${failed}`);

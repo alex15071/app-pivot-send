@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const Campaigns = () => {
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [mode, setMode] = useState<'create' | 'edit' | 'duplicate'>('create');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns"],
@@ -235,136 +237,138 @@ const Campaigns = () => {
         ) : (
           <div className="space-y-4">
             {campaigns.map((campaign) => (
-              <Card key={campaign.id}>
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <CardTitle>{campaign.name}</CardTitle>
-                        <Badge variant="secondary" className={getStatusColor(campaign.status)}>
-                          {campaign.status}
-                        </Badge>
+              <Card key={campaign.id} className="cursor-pointer hover:shadow-lg transition-shadow">
+                <div onClick={() => navigate(`/campaigns/${campaign.id}`)}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <CardTitle>{campaign.name}</CardTitle>
+                          <Badge variant="secondary" className={getStatusColor(campaign.status)}>
+                            {campaign.status}
+                          </Badge>
+                        </div>
+                        <CardDescription className="mt-2">
+                          {campaign.total_recipients.toLocaleString()} recipients
+                        </CardDescription>
                       </div>
-                      <CardDescription className="mt-2">
-                        {campaign.total_recipients.toLocaleString()} recipients
-                      </CardDescription>
-                    </div>
-                    <div className="flex gap-2">
-                      {campaign.status === "draft" || campaign.status === "paused" ? (
-                        <>
+                      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                        {campaign.status === "draft" || campaign.status === "paused" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingCampaign(campaign);
+                                setMode('edit');
+                                setOpen(true);
+                              }}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => startCampaignMutation.mutate(campaign.id)}
+                              disabled={startCampaignMutation.isPending}
+                            >
+                              <Play className="mr-2 h-4 w-4" />
+                              Start
+                            </Button>
+                          </>
+                        ) : campaign.status === "running" ? (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setEditingCampaign(campaign);
-                              setMode('edit');
-                              setOpen(true);
-                            }}
+                            onClick={() => pauseCampaignMutation.mutate(campaign.id)}
+                            disabled={pauseCampaignMutation.isPending}
                           >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
+                            <Pause className="mr-2 h-4 w-4" />
+                            Pause
                           </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => startCampaignMutation.mutate(campaign.id)}
-                            disabled={startCampaignMutation.isPending}
-                          >
-                            <Play className="mr-2 h-4 w-4" />
-                            Start
-                          </Button>
-                        </>
-                      ) : campaign.status === "running" ? (
+                        ) : null}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => pauseCampaignMutation.mutate(campaign.id)}
-                          disabled={pauseCampaignMutation.isPending}
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingCampaign(campaign);
+                            setMode('duplicate');
+                            setOpen(true);
+                          }}
                         >
-                          <Pause className="mr-2 h-4 w-4" />
-                          Pause
+                          <Copy className="h-4 w-4" />
                         </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditingCampaign(campaign);
-                          setMode('duplicate');
-                          setOpen(true);
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete "{campaign.name}"? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => deleteCampaignMutation.mutate(campaign.id)}
-                              className="bg-destructive hover:bg-destructive/90"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">Progress</span>
-                      <span className="font-medium">
-                        {campaign.processed.toLocaleString()} / {campaign.total_recipients.toLocaleString()}
-                      </span>
-                    </div>
-                    <Progress value={getProgress(campaign)} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="text-center p-3 rounded-lg bg-green-500/10">
-                      <div className="text-2xl font-bold text-green-600">{campaign.delivered.toLocaleString()}</div>
-                      <div className="text-muted-foreground">Delivered</div>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-blue-500/10">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {(campaign.processed - campaign.delivered - campaign.failed).toLocaleString()}
-                      </div>
-                      <div className="text-muted-foreground">Processing</div>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-red-500/10">
-                      <div className="text-2xl font-bold text-red-600">{campaign.failed.toLocaleString()}</div>
-                      <div className="text-muted-foreground">Failed</div>
-                    </div>
-                  </div>
-                  
-                  {campaign.status === 'running' && campaign.current_page_stats && campaign.current_page_stats.length > 0 && (
-                    <div className="pt-4 border-t">
-                      <div className="text-sm font-medium mb-2">Currently Processing:</div>
-                      <div className="flex flex-wrap gap-2">
-                        {campaign.current_page_stats.map((page, idx) => (
-                          <Badge key={idx} variant="outline" className="animate-pulse">
-                            📄 {page.page_name}
-                          </Badge>
-                        ))}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-2">
-                        Offset: {campaign.current_offset?.toLocaleString() || 0}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{campaign.name}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteCampaignMutation.mutate(campaign.id)}
+                                className="bg-destructive hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
-                  )}
-                </CardContent>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-muted-foreground">Progress</span>
+                        <span className="font-medium">
+                          {campaign.processed.toLocaleString()} / {campaign.total_recipients.toLocaleString()}
+                        </span>
+                      </div>
+                      <Progress value={getProgress(campaign)} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="text-center p-3 rounded-lg bg-green-500/10">
+                        <div className="text-2xl font-bold text-green-600">{campaign.delivered.toLocaleString()}</div>
+                        <div className="text-muted-foreground">Delivered</div>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-blue-500/10">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {(campaign.processed - campaign.delivered - campaign.failed).toLocaleString()}
+                        </div>
+                        <div className="text-muted-foreground">Processing</div>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-red-500/10">
+                        <div className="text-2xl font-bold text-red-600">{campaign.failed.toLocaleString()}</div>
+                        <div className="text-muted-foreground">Failed</div>
+                      </div>
+                    </div>
+                    
+                    {campaign.status === 'running' && campaign.current_page_stats && campaign.current_page_stats.length > 0 && (
+                      <div className="pt-4 border-t">
+                        <div className="text-sm font-medium mb-2">Currently Processing:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {campaign.current_page_stats.map((page, idx) => (
+                            <Badge key={idx} variant="outline" className="animate-pulse">
+                              📄 {page.page_name}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2">
+                          Offset: {campaign.current_offset?.toLocaleString() || 0}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </div>
               </Card>
             ))}
           </div>

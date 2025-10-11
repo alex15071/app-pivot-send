@@ -10,6 +10,7 @@ import Apps from "./pages/Apps";
 import Accounts from "./pages/Accounts";
 import Fanpages from "./pages/Fanpages";
 import Campaigns from "./pages/Campaigns";
+import CampaignDetails from "./pages/CampaignDetails";
 import PacingProfiles from "./pages/PacingProfiles";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/fanpages" element={<Fanpages />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/campaigns/:id" element={<CampaignDetails />} />
           <Route path="/pacing" element={<PacingProfiles />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
