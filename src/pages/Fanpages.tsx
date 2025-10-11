@@ -34,6 +34,7 @@ interface Fanpage {
   name: string;
   image_url: string;
   conversations: number;
+  actual_conversations?: number;
   active_app_key: string;
   created_at: string;
   connected_apps?: string[];
@@ -55,7 +56,7 @@ const Fanpages = () => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       
-      // For each fanpage, get all connected apps
+      // For each fanpage, get all connected apps and actual conversation count
       const fanpagesWithApps = await Promise.all(
         (data as Fanpage[]).map(async (page) => {
           const { data: tokens } = await supabase
@@ -63,14 +64,47 @@ const Fanpages = () => {
             .select("app_key")
             .eq("page_id", page.page_id);
           
+          // Get actual conversation count from fanpage_conversations
+          const { count } = await supabase
+            .from("fanpage_conversations")
+            .select("*", { count: 'exact', head: true })
+            .eq("page_id", page.page_id);
+          
           return {
             ...page,
             connected_apps: tokens?.map(t => t.app_key) || [page.active_app_key],
+            actual_conversations: count || 0,
           };
         })
       );
       
       return fanpagesWithApps;
+    },
+  });
+
+  const syncConversationCountMutation = useMutation({
+    mutationFn: async (pageId: string) => {
+      // Get actual count from DB
+      const { count } = await supabase
+        .from("fanpage_conversations")
+        .select("*", { count: 'exact', head: true })
+        .eq("page_id", pageId);
+      
+      // Update fanpage
+      const { error } = await supabase
+        .from("fanpages")
+        .update({ conversations: count || 0 })
+        .eq("page_id", pageId);
+      
+      if (error) throw error;
+      return count || 0;
+    },
+    onSuccess: (count) => {
+      toast.success(`Count updated: ${count.toLocaleString()} conversations`);
+      queryClient.invalidateQueries({ queryKey: ["fanpages"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to sync count");
     },
   });
 
@@ -170,7 +204,19 @@ const Fanpages = () => {
                       <CardTitle className="text-base">{page.name}</CardTitle>
                       <CardDescription className="text-xs flex items-center gap-2 mt-1">
                         <MessagesSquare className="h-3 w-3" />
-                        {page.conversations.toLocaleString()} conversations
+                        {page.actual_conversations?.toLocaleString() || 0} conversations
+                        {page.actual_conversations !== page.conversations && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            className="h-5 px-1 text-yellow-600 hover:text-yellow-700"
+                            onClick={() => syncConversationCountMutation.mutate(page.page_id)}
+                            disabled={syncConversationCountMutation.isPending}
+                            title="Count mismatch - click to sync"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                          </Button>
+                        )}
                       </CardDescription>
                     </div>
                   </div>

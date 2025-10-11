@@ -103,15 +103,7 @@ async function harvestConversations(supabaseClient: any, page_id: string) {
             console.error('[harvest-conversations] Insert error:', insertError);
           } else {
             totalSaved += conversations.length;
-            console.log(`[harvest-conversations] Saved ${conversations.length} conversations (total: ${totalSaved})`);
-            
-            // Update fanpage count every 100 conversations for real-time progress
-            if (totalSaved % 100 === 0 || totalSaved < 100) {
-              await supabaseClient
-                .from('fanpages')
-                .update({ conversations: totalSaved })
-                .eq('page_id', page_id);
-            }
+            console.log(`[harvest-conversations] Saved ${conversations.length} conversations (total processed: ${totalSaved})`);
           }
         }
       }
@@ -131,20 +123,24 @@ async function harvestConversations(supabaseClient: any, page_id: string) {
       }
     }
 
-    // Update fanpage conversation count
-    const { data: countData } = await supabaseClient
+    // Update fanpage conversation count with actual DB count
+    const { count, error: countError } = await supabaseClient
       .from('fanpage_conversations')
       .select('*', { count: 'exact', head: true })
       .eq('page_id', page_id);
 
-    const count = countData ? (countData as any).count : totalSaved;
+    if (countError) {
+      console.error('[harvest-conversations] Error counting conversations:', countError);
+    }
+
+    const actualCount = count || 0;
 
     await supabaseClient
       .from('fanpages')
-      .update({ conversations: count })
+      .update({ conversations: actualCount })
       .eq('page_id', page_id);
 
-    console.log(`[harvest-conversations] Completed. Total conversations: ${count}`);
+    console.log(`[harvest-conversations] Completed. Total conversations in DB: ${actualCount}`);
   } catch (error) {
     console.error('[harvest-conversations] Background task error:', error);
   }
