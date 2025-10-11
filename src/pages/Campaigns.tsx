@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import CampaignCreator from "@/components/campaigns/CampaignCreator";
 import { SequenceCreator } from "@/components/campaigns/SequenceCreator";
+import { BatchCardCreator } from "@/components/campaigns/BatchCardCreator";
 
 interface Campaign {
   id: string;
@@ -39,6 +40,7 @@ const Campaigns = () => {
   const [mode, setMode] = useState<'create' | 'edit' | 'duplicate'>('create');
   const [showSequenceCreator, setShowSequenceCreator] = useState(false);
   const [sequenceCampaign, setSequenceCampaign] = useState<Campaign | null>(null);
+  const [showBatchCardCreator, setShowBatchCardCreator] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -190,6 +192,13 @@ const Campaigns = () => {
                 </AlertDialogContent>
               </AlertDialog>
             )}
+            <Button 
+              variant="outline"
+              onClick={() => setShowBatchCardCreator(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Crear Cards en Masa
+            </Button>
             <Dialog open={open} onOpenChange={(isOpen) => {
               setOpen(isOpen);
               if (!isOpen) {
@@ -414,6 +423,12 @@ const Campaigns = () => {
               }}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBatchCardCreator} onOpenChange={setShowBatchCardCreator}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <BatchCardCreator onClose={() => setShowBatchCardCreator(false)} />
         </DialogContent>
       </Dialog>
     </AppLayout>
