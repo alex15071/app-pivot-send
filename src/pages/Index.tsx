@@ -1,97 +1,171 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Send, CheckCircle, XCircle, TrendingUp } from "lucide-react";
+import { AppWindow, Users, MessagesSquare, Send, TrendingUp, AlertTriangle } from "lucide-react";
 
 const Index = () => {
-  const mockData = [
-    { name: "Mon", delivered: 4200, failed: 150 },
-    { name: "Tue", delivered: 5800, failed: 200 },
-    { name: "Wed", delivered: 7200, failed: 180 },
-    { name: "Thu", delivered: 6100, failed: 220 },
-    { name: "Fri", delivered: 8400, failed: 160 },
-    { name: "Sat", delivered: 3200, failed: 90 },
-    { name: "Sun", delivered: 2800, failed: 70 },
-  ];
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+      }
+    };
+    checkAuth();
+  }, [navigate]);
+
+  const { data: stats } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const [appsRes, accountsRes, fanpagesRes, campaignsRes] = await Promise.all([
+        supabase.from("apps").select("*", { count: "exact", head: true }),
+        supabase.from("accounts").select("*", { count: "exact", head: true }),
+        supabase.from("fanpages").select("conversations"),
+        supabase.from("campaigns").select("status, delivered, failed"),
+      ]);
+
+      const totalConversations = fanpagesRes.data?.reduce((sum, fp) => sum + (fp.conversations || 0), 0) || 0;
+      const runningCampaigns = campaignsRes.data?.filter(c => c.status === 'running').length || 0;
+      const totalDelivered = campaignsRes.data?.reduce((sum, c) => sum + (c.delivered || 0), 0) || 0;
+      const totalFailed = campaignsRes.data?.reduce((sum, c) => sum + (c.failed || 0), 0) || 0;
+
+      return {
+        apps: (appsRes.count as number) || 0,
+        accounts: (accountsRes.count as number) || 0,
+        fanpages: fanpagesRes.data?.length || 0,
+        conversations: totalConversations,
+        runningCampaigns,
+        totalDelivered,
+        totalFailed,
+      };
+    },
+    refetchInterval: 5000,
+  });
+
+  const deliveryRate = stats && (stats.totalDelivered + stats.totalFailed) > 0
+    ? ((stats.totalDelivered / (stats.totalDelivered + stats.totalFailed)) * 100).toFixed(1)
+    : "0";
 
   return (
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your Facebook Messenger sending operations
-          </p>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">Multi-app Facebook Messenger broadcast system</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+          <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate("/apps")}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sent</CardTitle>
+              <CardTitle className="text-sm font-medium">Facebook Apps</CardTitle>
+              <AppWindow className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.apps || 0}</div>
+              <p className="text-xs text-muted-foreground">Multi-app rotation</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate("/accounts")}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Connected Accounts</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.accounts || 0}</div>
+              <p className="text-xs text-muted-foreground">OAuth connections</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate("/fanpages")}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Conversations</CardTitle>
+              <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats?.conversations.toLocaleString() || 0}</div>
+              <p className="text-xs text-muted-foreground">Across {stats?.fanpages || 0} fanpages</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate("/campaigns")}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
               <Send className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">37,800</div>
-              <p className="text-xs text-muted-foreground">This week</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Delivered</CardTitle>
-              <CheckCircle className="h-4 w-4 text-success" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">36,730</div>
-              <p className="text-xs text-muted-foreground">
-                <span className="text-success">+97.2%</span> delivery rate
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Failed</CardTitle>
-              <XCircle className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">1,070</div>
-              <p className="text-xs text-muted-foreground">
-                <span className="text-destructive">2.8%</span> error rate
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">3</div>
-              <p className="text-xs text-muted-foreground">2 running, 1 paused</p>
+              <div className="text-2xl font-bold">{stats?.runningCampaigns || 0}</div>
+              <p className="text-xs text-muted-foreground">Currently sending</p>
             </CardContent>
           </Card>
         </div>
 
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle>Message Delivery</CardTitle>
-            <CardDescription>Daily delivery statistics for the past week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={mockData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="delivered" fill="hsl(var(--success))" />
-                <Bar dataKey="failed" fill="hsl(var(--destructive))" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-green-500" />
+                Delivery Performance
+              </CardTitle>
+              <CardDescription>Overall message delivery statistics</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Delivery Rate</span>
+                  <span className="font-bold text-green-600">{deliveryRate}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total Delivered</span>
+                  <span className="font-medium">{stats?.totalDelivered.toLocaleString() || 0}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total Failed</span>
+                  <span className="font-medium text-red-600">{stats?.totalFailed.toLocaleString() || 0}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                Quick Start Guide
+              </CardTitle>
+              <CardDescription>Get started with your messaging system</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ol className="space-y-2 text-sm">
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-primary">1.</span>
+                  <span>Add your Facebook apps in the Apps section</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-primary">2.</span>
+                  <span>Connect Facebook accounts via OAuth</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-primary">3.</span>
+                  <span>Harvest conversations from your fanpages</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-primary">4.</span>
+                  <span>Create pacing profiles for rate limiting</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="font-bold text-primary">5.</span>
+                  <span>Launch campaigns and monitor performance</span>
+                </li>
+              </ol>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </AppLayout>
   );
