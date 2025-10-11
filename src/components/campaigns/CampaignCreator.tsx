@@ -98,7 +98,8 @@ const CampaignCreator = ({ onClose }: CampaignCreatorProps) => {
     if (selectedFanpages.length === 0) {
       return "Please select at least one fanpage";
     }
-    if (!messageText.trim()) {
+    // Message text is only required for text, image, and text_button types
+    if (messageType !== "card" && !messageText.trim()) {
       return "Please enter a message";
     }
     if (messageType === "image" && !imageUrl.trim()) {
