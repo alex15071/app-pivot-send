@@ -17,6 +17,22 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // First, reset any messages stuck in 'sending' for more than 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: stuckMessages } = await supabase
+      .from('message_sequences')
+      .select('id')
+      .eq('status', 'sending')
+      .lt('updated_at', fiveMinutesAgo);
+
+    if (stuckMessages && stuckMessages.length > 0) {
+      console.log(`[sequence-scheduler] Resetting ${stuckMessages.length} stuck messages`);
+      await supabase
+        .from('message_sequences')
+        .update({ status: 'scheduled' })
+        .in('id', stuckMessages.map(m => m.id));
+    }
+
     // Find messages that should be sent now
     const { data: dueMessages, error: fetchError } = await supabase
       .from('message_sequences')
@@ -57,24 +73,32 @@ Deno.serve(async (req) => {
           .eq('id', message.id);
 
         // Invoke campaign-control to send this specific message
-        const { data: invokeData, error: invokeError } = await supabase.functions.invoke('campaign-control', {
-          body: {
+        const controlUrl = `${supabaseUrl}/functions/v1/campaign-control`;
+        const response = await fetch(controlUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`
+          },
+          body: JSON.stringify({
             action: 'start',
             campaign_id: message.campaign_id,
             message_sequence_id: message.id,
-          },
+          })
         });
 
-        if (invokeError) {
-          console.error(`[sequence-scheduler] Error invoking campaign-control for message ${message.id}:`, invokeError);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[sequence-scheduler] Error invoking campaign-control for message ${message.id}:`, errorText);
           await supabase
             .from('message_sequences')
             .update({ status: 'failed' })
             .eq('id', message.id);
           
-          results.push({ message_id: message.id, success: false, error: invokeError.message });
+          results.push({ message_id: message.id, success: false, error: errorText });
         } else {
-          console.log(`[sequence-scheduler] Successfully triggered message ${message.id}`);
+          const resultData = await response.json();
+          console.log(`[sequence-scheduler] Successfully triggered message ${message.id}:`, resultData);
           results.push({ message_id: message.id, success: true });
         }
       } catch (err) {
