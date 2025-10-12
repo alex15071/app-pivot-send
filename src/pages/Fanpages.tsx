@@ -149,6 +149,29 @@ const Fanpages = () => {
     },
   });
 
+  const deleteAllConversationsMutation = useMutation({
+    mutationFn: async (pageId: string) => {
+      const { error } = await supabase
+        .from("fanpage_conversations")
+        .delete()
+        .eq("page_id", pageId);
+      if (error) throw error;
+      
+      // Update fanpage conversation count to 0
+      await supabase
+        .from("fanpages")
+        .update({ conversations: 0 })
+        .eq("page_id", pageId);
+    },
+    onSuccess: () => {
+      toast.success("All conversations deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["fanpages"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete conversations");
+    },
+  });
+
   const handleHarvestConversations = async (pageId: string, pageName: string) => {
     setHarvestingPageId(pageId);
     setHarvestProgress(0);
@@ -285,6 +308,36 @@ const Fanpages = () => {
                       pageName={page.name}
                       onImportComplete={() => refetch()}
                     />
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="text-orange-600 hover:text-orange-700"
+                          disabled={deleteAllConversationsMutation.isPending}
+                          title="Delete all conversations"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete All Conversations</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete ALL {page.actual_conversations?.toLocaleString() || 0} conversations from "{page.name}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => deleteAllConversationsMutation.mutate(page.page_id)}
+                            className="bg-orange-600 text-white hover:bg-orange-700"
+                          >
+                            Delete All Conversations
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button 

@@ -271,6 +271,7 @@ export type Database = {
           image_url: string | null
           name: string
           page_id: string
+          status: string
           updated_at: string | null
         }
         Insert: {
@@ -282,6 +283,7 @@ export type Database = {
           image_url?: string | null
           name: string
           page_id: string
+          status?: string
           updated_at?: string | null
         }
         Update: {
@@ -293,6 +295,7 @@ export type Database = {
           image_url?: string | null
           name?: string
           page_id?: string
+          status?: string
           updated_at?: string | null
         }
         Relationships: [

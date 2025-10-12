@@ -188,15 +188,17 @@ serve(async (req) => {
 
       // Save fanpages
       for (const page of pagesData.data) {
-        // Save fanpage
+        // Save fanpage with upsert to update existing orphaned fanpages
         await supabaseClient.from('fanpages').upsert({
           page_id: page.id,
           name: page.name,
           image_url: page.picture?.data?.url || null,
           account_id: account.id,
           active_app_key: app.key,
+          status: 'active', // Mark as active when connected
         }, {
           onConflict: 'page_id',
+          ignoreDuplicates: false, // Always update the fields
         });
 
         // Save page token for this app

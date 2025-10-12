@@ -156,17 +156,23 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
   const duplicateSequence = async () => {
     if (!campaign?.id) throw new Error("No campaign to duplicate");
 
+    // Calculate total recipients from selected fanpages
+    const totalRecipients = selectedFanpages.reduce((sum, pageId) => {
+      const page = fanpages.find(p => p.page_id === pageId);
+      return sum + (page?.conversations || 0);
+    }, 0);
+
     // Create new campaign
     const { data: newCampaign, error: campaignError } = await supabase
       .from("campaigns")
       .insert({
         name: campaignName.trim(),
-        status: "scheduled",
+        status: "draft",
         is_sequence: true,
         sequence_start_at: campaign.sequence_start_at,
         pacing_profile_id: selectedPacingProfile || null,
         active_app_key: selectedApp || null,
-        total_recipients: campaign.total_recipients,
+        total_recipients: totalRecipients,
       })
       .select()
       .single();
@@ -186,6 +192,7 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
       .insert(fanpageLinks);
 
     if (fanpageError) {
+      await supabase.from("campaigns").delete().eq("id", newCampaign.id);
       throw new Error(`Failed to link fanpages: ${fanpageError.message}`);
     }
 
@@ -197,6 +204,7 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
       .order("sequence_order");
 
     if (seqError) {
+      await supabase.from("campaigns").delete().eq("id", newCampaign.id);
       throw new Error(`Failed to fetch sequences: ${seqError.message}`);
     }
 
@@ -207,9 +215,9 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
         message_arguments: seq.message_arguments,
         delay_minutes: seq.delay_minutes,
         sequence_order: seq.sequence_order,
-        scheduled_for: seq.scheduled_for,
+        scheduled_for: null, // Reset scheduled_for so it gets recalculated
         status: "scheduled",
-        app_key: seq.app_key,
+        app_key: selectedApp || seq.app_key,
       }));
 
       const { error: insertSeqError } = await supabase
@@ -217,6 +225,7 @@ const CampaignCreator = ({ onClose, campaign, mode = 'create' }: CampaignCreator
         .insert(newSequences);
 
       if (insertSeqError) {
+        await supabase.from("campaigns").delete().eq("id", newCampaign.id);
         throw new Error(`Failed to create sequences: ${insertSeqError.message}`);
       }
     }
