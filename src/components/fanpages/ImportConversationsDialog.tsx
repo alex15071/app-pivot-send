@@ -44,24 +44,39 @@ export const ImportConversationsDialog = ({
 
       // Ensure it's an array
       if (!Array.isArray(conversations)) {
-        toast.error("JSON must be an array of conversations");
+        toast.error("JSON debe ser un array");
         return;
       }
 
-      // Extract ONLY conversation_id from each record, ignore everything else
-      const conversationIds = conversations
-        .filter((conv: any) => conv.type !== 'header') // Skip PHPMyAdmin headers
-        .map((conv: any) => conv.conversation_id)
-        .filter((id: any) => id); // Only keep valid IDs
+      if (conversations.length === 0) {
+        toast.error("El array está vacío");
+        return;
+      }
 
-      // Validate format
+      // Extract ONLY conversation_id, being very permissive
+      const conversationIds: string[] = [];
+      
+      conversations.forEach((item: any, index: number) => {
+        // Skip if not an object
+        if (!item || typeof item !== 'object') return;
+        
+        // Extract conversation_id (be flexible with the field name)
+        const id = item.conversation_id || item.conversationId || item.sender_id || item.senderId;
+        
+        if (id && typeof id === 'string') {
+          conversationIds.push(id);
+        }
+      });
+
       if (conversationIds.length === 0) {
-        toast.error("No se encontraron conversation_id válidos en el JSON");
+        toast.error("No se encontraron IDs válidos. Verifica que el JSON tenga el campo 'conversation_id'");
+        console.error("Primer registro del JSON:", conversations[0]);
+        console.error("Campos disponibles:", conversations[0] ? Object.keys(conversations[0]) : 'ninguno');
         return;
       }
 
-      console.log(`Total extraído: ${conversationIds.length} conversation_id únicos`);
-      console.log("Primer conversation_id:", conversationIds[0]);
+      console.log(`✅ Extraídos ${conversationIds.length} conversation_id de ${conversations.length} registros`);
+      console.log("Primer ID:", conversationIds[0]);
 
       toast.info(`Importando ${conversationIds.length.toLocaleString()} conversaciones...`);
 
