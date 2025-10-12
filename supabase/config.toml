@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.facebook-webhook]
 verify_jwt = false
+
+[functions.sequence-scheduler]
+verify_jwt = false
+
+[functions.campaign-control]
+verify_jwt = false

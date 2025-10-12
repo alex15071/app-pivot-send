@@ -458,7 +458,7 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
           })
           .eq('id', messageSequenceId);
 
-        // Update campaign's current_sequence_step
+        // Update campaign's current_sequence_step and keep it running
         const { data: seqData } = await supabaseClient
           .from('message_sequences')
           .select('sequence_order')
@@ -468,7 +468,11 @@ async function startCampaignSending(campaignId: string, offset: number = 0, mess
         if (seqData) {
           await supabaseClient
             .from('campaigns')
-            .update({ current_sequence_step: seqData.sequence_order })
+            .update({ 
+              current_sequence_step: seqData.sequence_order,
+              status: 'running',  // Keep campaign running for next sequence message
+              current_page_stats: []  // Clear page stats between messages
+            })
             .eq('id', campaignId);
         }
 
