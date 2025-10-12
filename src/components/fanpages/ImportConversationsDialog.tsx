@@ -48,31 +48,28 @@ export const ImportConversationsDialog = ({
         return;
       }
 
-      // Filter out PHPMyAdmin header and invalid records
-      const validConversations = conversations.filter((conv: any) => {
-        // Skip PHPMyAdmin headers
-        if (conv.type === 'header') return false;
-        
-        // Only include records with conversation_id or sender_id
-        return conv.conversation_id || conv.sender_id;
-      });
+      // Extract ONLY conversation_id from each record, ignore everything else
+      const conversationIds = conversations
+        .filter((conv: any) => conv.type !== 'header') // Skip PHPMyAdmin headers
+        .map((conv: any) => conv.conversation_id)
+        .filter((id: any) => id); // Only keep valid IDs
 
       // Validate format
-      if (validConversations.length === 0) {
-        toast.error("No se encontraron conversaciones válidas en el JSON");
+      if (conversationIds.length === 0) {
+        toast.error("No se encontraron conversation_id válidos en el JSON");
         return;
       }
 
-      console.log(`Original: ${conversations.length} registros, Válidos: ${validConversations.length}`);
-      console.log("Primer registro válido:", validConversations[0]);
+      console.log(`Total extraído: ${conversationIds.length} conversation_id únicos`);
+      console.log("Primer conversation_id:", conversationIds[0]);
 
-      toast.info(`Importando ${validConversations.length.toLocaleString()} conversaciones...`);
+      toast.info(`Importando ${conversationIds.length.toLocaleString()} conversaciones...`);
 
-      // Call import function
+      // Call import function with ONLY conversation IDs
       const { data, error } = await supabase.functions.invoke('import-conversations', {
         body: {
           page_id: pageId,
-          conversations: validConversations
+          conversation_ids: conversationIds
         }
       });
 
