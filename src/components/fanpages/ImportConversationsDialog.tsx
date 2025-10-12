@@ -56,10 +56,16 @@ export const ImportConversationsDialog = ({
 
       // Check if records have required fields
       const firstRecord = conversations[0];
-      if (!firstRecord.sender_id && !firstRecord.conversation_id) {
-        toast.error("Each record must have 'conversation_id' or 'sender_id' field");
+      const hasValidField = firstRecord.conversation_id || firstRecord.sender_id;
+      
+      if (!hasValidField) {
+        toast.error("JSON inválido: Cada registro debe tener 'conversation_id' o 'sender_id'");
+        console.error("Primer registro:", firstRecord);
         return;
       }
+
+      console.log(`Validación OK: ${conversations.length} registros para importar`);
+      console.log("Primer registro:", firstRecord);
 
       toast.info(`Importing ${conversations.length.toLocaleString()} conversations...`);
 
