@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.campaign-control]
 verify_jwt = false
+
+[functions.import-conversations]
+verify_jwt = false

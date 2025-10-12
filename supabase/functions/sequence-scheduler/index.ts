@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       .select('*, campaigns!inner(id, name, status, is_sequence)')
       .eq('status', 'scheduled')
       .lte('scheduled_for', new Date().toISOString())
-      .in('campaigns.status', ['running', 'active'])  // Include both running and active campaigns
+      .eq('campaigns.status', 'running')
       .order('scheduled_for', { ascending: true })
       .limit(10); // Process max 10 messages per minute
 

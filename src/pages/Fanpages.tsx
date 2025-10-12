@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ImportConversationsDialog } from "@/components/fanpages/ImportConversationsDialog";
 
 interface Fanpage {
   id: string;
@@ -80,6 +81,29 @@ const Fanpages = () => {
       
       return fanpagesWithApps;
     },
+  });
+
+  // Subscribe to fanpage_conversations changes for real-time updates
+  useState(() => {
+    const channel = supabase
+      .channel('fanpage_conversations_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'fanpage_conversations'
+        },
+        () => {
+          // Refetch fanpages when conversations change
+          refetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   });
 
   const syncConversationCountMutation = useMutation({
@@ -256,6 +280,11 @@ const Fanpages = () => {
                         </>
                       )}
                     </Button>
+                    <ImportConversationsDialog
+                      pageId={page.page_id}
+                      pageName={page.name}
+                      onImportComplete={() => refetch()}
+                    />
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button 
