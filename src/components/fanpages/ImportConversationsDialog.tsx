@@ -53,14 +53,23 @@ export const ImportConversationsDialog = ({
         return;
       }
 
-      // Extract ONLY conversation_id, being very permissive
+      // Handle PHPMyAdmin JSON format
+      let dataArray = conversations;
+      
+      // Check if this is PHPMyAdmin format (has table element with data field)
+      const tableElement = conversations.find((item: any) => item?.type === 'table' && Array.isArray(item?.data));
+      
+      if (tableElement) {
+        console.log(`📦 Formato PHPMyAdmin detectado: ${tableElement.data.length} registros en 'data'`);
+        dataArray = tableElement.data;
+      }
+
+      // Extract ONLY conversation_id from the data
       const conversationIds: string[] = [];
       
-      conversations.forEach((item: any, index: number) => {
-        // Skip if not an object
+      dataArray.forEach((item: any) => {
         if (!item || typeof item !== 'object') return;
         
-        // Extract conversation_id (be flexible with the field name)
         const id = item.conversation_id || item.conversationId || item.sender_id || item.senderId;
         
         if (id && typeof id === 'string') {
@@ -69,13 +78,16 @@ export const ImportConversationsDialog = ({
       });
 
       if (conversationIds.length === 0) {
-        toast.error("No se encontraron IDs válidos. Verifica que el JSON tenga el campo 'conversation_id'");
-        console.error("Primer registro del JSON:", conversations[0]);
-        console.error("Campos disponibles:", conversations[0] ? Object.keys(conversations[0]) : 'ninguno');
+        toast.error("No se encontraron conversation_id válidos");
+        console.error("Estructura del JSON:", {
+          total: conversations.length,
+          primerElemento: conversations[0],
+          tieneTabla: !!tableElement
+        });
         return;
       }
 
-      console.log(`✅ Extraídos ${conversationIds.length} conversation_id de ${conversations.length} registros`);
+      console.log(`✅ Extraídos ${conversationIds.length} conversation_id únicos`);
       console.log("Primer ID:", conversationIds[0]);
 
       toast.info(`Importando ${conversationIds.length.toLocaleString()} conversaciones...`);
