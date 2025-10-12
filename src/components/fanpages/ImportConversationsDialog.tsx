@@ -90,20 +90,43 @@ export const ImportConversationsDialog = ({
       console.log(`✅ Extraídos ${conversationIds.length} conversation_id únicos`);
       console.log("Primer ID:", conversationIds[0]);
 
-      toast.info(`Importando ${conversationIds.length.toLocaleString()} conversaciones...`);
+      // Divide en batches de 5000 para no exceder el límite del servidor
+      const BATCH_SIZE = 5000;
+      const totalBatches = Math.ceil(conversationIds.length / BATCH_SIZE);
+      
+      toast.info(`Importando ${conversationIds.length.toLocaleString()} conversaciones en ${totalBatches} lotes...`);
 
-      // Call import function with ONLY conversation IDs
-      const { data, error } = await supabase.functions.invoke('import-conversations', {
-        body: {
-          page_id: pageId,
-          conversation_ids: conversationIds
+      let totalImported = 0;
+      let totalSkipped = 0;
+
+      for (let i = 0; i < conversationIds.length; i += BATCH_SIZE) {
+        const batch = conversationIds.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        
+        console.log(`📦 Enviando lote ${batchNum}/${totalBatches} (${batch.length} IDs)...`);
+
+        // Call import function with batch
+        const { data, error } = await supabase.functions.invoke('import-conversations', {
+          body: {
+            page_id: pageId,
+            conversation_ids: batch
+          }
+        });
+
+        if (error) {
+          console.error(`❌ Error en lote ${batchNum}:`, error);
+          toast.error(`Error en lote ${batchNum}: ${error.message}`);
+          break;
         }
-      });
 
-      if (error) throw error;
+        totalImported += data.imported || 0;
+        totalSkipped += data.skipped || 0;
+        
+        toast.info(`Lote ${batchNum}/${totalBatches} completado: ${data.imported} nuevos`);
+      }
 
       toast.success(
-        `Import complete! ${data.imported.toLocaleString()} imported, ${data.skipped.toLocaleString()} skipped. Total: ${data.total.toLocaleString()}`
+        `Import complete! ${totalImported.toLocaleString()} importados, ${totalSkipped.toLocaleString()} duplicados. Total: ${(totalImported + totalSkipped).toLocaleString()}`
       );
 
       setOpen(false);
