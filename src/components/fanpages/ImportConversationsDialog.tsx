@@ -57,7 +57,7 @@ export const ImportConversationsDialog = ({
       // Check if records have required fields
       const firstRecord = conversations[0];
       if (!firstRecord.sender_id && !firstRecord.conversation_id) {
-        toast.error("Each record must have 'sender_id' or 'conversation_id' field");
+        toast.error("Each record must have 'conversation_id' or 'sender_id' field");
         return;
       }
 
@@ -109,15 +109,15 @@ export const ImportConversationsDialog = ({
               JSON Data (Array de conversaciones)
             </label>
             <Textarea
-              placeholder={`[\n  {"sender_id": "1234567890"},\n  {"sender_id": "0987654321"},\n  ...\n]`}
+              placeholder={`[\n  {"id":"123","fanpage_id":"5010","conversation_id":"24717859741227746","created_at":"2025-10-12 00:26:36"},\n  {"id":"124","fanpage_id":"5010","conversation_id":"24579178931745037","created_at":"2025-10-12 00:31:09"},\n  ...\n]`}
               value={jsonData}
               onChange={(e) => setJsonData(e.target.value)}
               className="min-h-[300px] font-mono text-xs"
               disabled={importing}
             />
             <p className="text-xs text-muted-foreground">
-              Formato: Array de objetos con campo "sender_id" o "conversation_id". 
-              Ejemplo: <code className="bg-muted px-1 rounded">[{`{"sender_id": "123..."}`}]</code>
+              Formato SQL directo: Pega el JSON completo exportado de tu MySQL. 
+              Ejemplo: <code className="bg-muted px-1 rounded">[{`{"conversation_id": "123...", "fanpage_id": "5010"}`}]</code>
             </p>
           </div>
         </div>
