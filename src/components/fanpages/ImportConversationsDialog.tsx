@@ -48,32 +48,31 @@ export const ImportConversationsDialog = ({
         return;
       }
 
+      // Filter out PHPMyAdmin header and invalid records
+      const validConversations = conversations.filter((conv: any) => {
+        // Skip PHPMyAdmin headers
+        if (conv.type === 'header') return false;
+        
+        // Only include records with conversation_id or sender_id
+        return conv.conversation_id || conv.sender_id;
+      });
+
       // Validate format
-      if (conversations.length === 0) {
-        toast.error("No conversations to import");
+      if (validConversations.length === 0) {
+        toast.error("No se encontraron conversaciones válidas en el JSON");
         return;
       }
 
-      // Check if records have required fields
-      const firstRecord = conversations[0];
-      const hasValidField = firstRecord.conversation_id || firstRecord.sender_id;
-      
-      if (!hasValidField) {
-        toast.error("JSON inválido: Cada registro debe tener 'conversation_id' o 'sender_id'");
-        console.error("Primer registro:", firstRecord);
-        return;
-      }
+      console.log(`Original: ${conversations.length} registros, Válidos: ${validConversations.length}`);
+      console.log("Primer registro válido:", validConversations[0]);
 
-      console.log(`Validación OK: ${conversations.length} registros para importar`);
-      console.log("Primer registro:", firstRecord);
-
-      toast.info(`Importing ${conversations.length.toLocaleString()} conversations...`);
+      toast.info(`Importando ${validConversations.length.toLocaleString()} conversaciones...`);
 
       // Call import function
       const { data, error } = await supabase.functions.invoke('import-conversations', {
         body: {
           page_id: pageId,
-          conversations: conversations
+          conversations: validConversations
         }
       });
 
