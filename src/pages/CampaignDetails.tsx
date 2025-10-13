@@ -34,6 +34,18 @@ interface FanpageStats {
   failed: number;
 }
 
+interface FanpageMessageStats {
+  page_id: string;
+  fanpage_name: string;
+  image_url: string | null;
+  message_sequence_id: string;
+  sequence_order: number;
+  message_type: string;
+  total_sent: number;
+  successful: number;
+  failed: number;
+}
+
 const CampaignDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -70,17 +82,11 @@ const CampaignDetails = () => {
     refetchInterval: 5000,
   });
 
-  const { data: fanpageStats = [], isLoading: statsLoading } = useQuery({
-    queryKey: ["campaign-fanpage-stats", id],
+  const { data: fanpageMessageStats = [], isLoading: statsLoading } = useQuery({
+    queryKey: ["campaign-fanpage-message-stats", id],
     queryFn: async () => {
-      // Use raw SQL to aggregate directly in the database for better performance
-      const { data: results, error } = await supabase.rpc('get_campaign_fanpage_stats', {
-        p_campaign_id: id
-      });
-
-      if (error) {
-        console.error('Error fetching fanpage stats:', error);
-        // Fallback to manual grouping if RPC doesn't exist
+      if (!campaign?.is_sequence) {
+        // For non-sequence campaigns, use the original aggregation
         const { data: sendResults } = await supabase
           .from("send_results")
           .select("page_id, http_code")
@@ -88,7 +94,6 @@ const CampaignDetails = () => {
 
         if (!sendResults || sendResults.length === 0) return [];
 
-        // Group by page_id
         const grouped: Record<string, any> = {};
         sendResults.forEach((row: any) => {
           if (!grouped[row.page_id]) {
@@ -107,7 +112,6 @@ const CampaignDetails = () => {
           }
         });
 
-        // Get fanpage details
         const pageIds = Object.keys(grouped);
         if (pageIds.length > 0) {
           const { data: fanpages } = await supabase
@@ -126,9 +130,84 @@ const CampaignDetails = () => {
         return Object.values(grouped) as FanpageStats[];
       }
 
-      return results as FanpageStats[];
+      // For sequence campaigns, manually aggregate by page_id and message_sequence_id
+      const { data: sendResults } = await supabase
+        .from("send_results")
+        .select("page_id, http_code, message_sequence_id")
+        .eq("campaign_id", id);
+
+      if (!sendResults || sendResults.length === 0) return [];
+
+      // Group by page_id and message_sequence_id
+      const grouped: Record<string, Record<string, any>> = {};
+      sendResults.forEach((row: any) => {
+        if (!grouped[row.page_id]) {
+          grouped[row.page_id] = {};
+        }
+        if (!grouped[row.page_id][row.message_sequence_id]) {
+          grouped[row.page_id][row.message_sequence_id] = {
+            page_id: row.page_id,
+            message_sequence_id: row.message_sequence_id,
+            total_sent: 0,
+            successful: 0,
+            failed: 0,
+          };
+        }
+        grouped[row.page_id][row.message_sequence_id].total_sent++;
+        if (row.http_code === 200) {
+          grouped[row.page_id][row.message_sequence_id].successful++;
+        } else {
+          grouped[row.page_id][row.message_sequence_id].failed++;
+        }
+      });
+
+      // Flatten and enrich with fanpage and sequence details
+      const flattened: FanpageMessageStats[] = [];
+      for (const pageId of Object.keys(grouped)) {
+        for (const msgSeqId of Object.keys(grouped[pageId])) {
+          flattened.push(grouped[pageId][msgSeqId]);
+        }
+      }
+
+      // Get fanpage details
+      const pageIds = Object.keys(grouped);
+      if (pageIds.length > 0) {
+        const { data: fanpages } = await supabase
+          .from("fanpages")
+          .select("page_id, name, image_url")
+          .in("page_id", pageIds);
+
+        fanpages?.forEach((fp: any) => {
+          flattened
+            .filter(stat => stat.page_id === fp.page_id)
+            .forEach(stat => {
+              stat.fanpage_name = fp.name;
+              stat.image_url = fp.image_url;
+            });
+        });
+      }
+
+      // Get sequence details
+      const seqIds = [...new Set(flattened.map(s => s.message_sequence_id))];
+      if (seqIds.length > 0) {
+        const { data: sequences } = await supabase
+          .from("message_sequences")
+          .select("id, sequence_order, message_type")
+          .in("id", seqIds);
+
+        sequences?.forEach((seq: any) => {
+          flattened
+            .filter(stat => stat.message_sequence_id === seq.id)
+            .forEach(stat => {
+              stat.sequence_order = seq.sequence_order;
+              stat.message_type = seq.message_type;
+            });
+        });
+      }
+
+      return flattened;
     },
-    enabled: !!id,
+    enabled: !!id && !!campaign,
   });
 
   const getStatusColor = (status: string) => {
@@ -269,17 +348,107 @@ const CampaignDetails = () => {
           <CardHeader>
             <CardTitle>Breakdown by Fanpage</CardTitle>
             <CardDescription>
-              Messages sent to each fanpage
+              {campaign.is_sequence 
+                ? "Messages sent per fanpage, grouped by sequence message"
+                : "Messages sent to each fanpage"}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {fanpageStats.length === 0 ? (
+            {fanpageMessageStats.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No send results yet
               </div>
+            ) : campaign.is_sequence ? (
+              // Sequence campaigns: Group by fanpage, then by message
+              <div className="space-y-6">
+                {(() => {
+                  // Group stats by page_id
+                  const groupedByPage: Record<string, FanpageMessageStats[]> = {};
+                  (fanpageMessageStats as FanpageMessageStats[]).forEach(stat => {
+                    if (!groupedByPage[stat.page_id]) {
+                      groupedByPage[stat.page_id] = [];
+                    }
+                    groupedByPage[stat.page_id].push(stat);
+                  });
+
+                  return Object.entries(groupedByPage)
+                    .sort(([, a], [, b]) => {
+                      const totalA = a.reduce((sum, s) => sum + s.total_sent, 0);
+                      const totalB = b.reduce((sum, s) => sum + s.total_sent, 0);
+                      return totalB - totalA;
+                    })
+                    .map(([pageId, pageStats]) => {
+                      const totalSent = pageStats.reduce((sum, s) => sum + s.total_sent, 0);
+                      const totalSuccessful = pageStats.reduce((sum, s) => sum + s.successful, 0);
+                      const totalFailed = pageStats.reduce((sum, s) => sum + s.failed, 0);
+                      const successRate = totalSent > 0 ? (totalSuccessful / totalSent) * 100 : 0;
+                      const firstStat = pageStats[0];
+
+                      return (
+                        <div key={pageId} className="border rounded-lg p-4">
+                          <div className="flex items-center gap-4 mb-4">
+                            <Avatar className="h-12 w-12">
+                              <AvatarImage src={firstStat.image_url || undefined} alt={firstStat.fanpage_name} />
+                              <AvatarFallback>
+                                {firstStat.fanpage_name?.charAt(0) || pageId.charAt(0)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <h3 className="font-semibold">{firstStat.fanpage_name || pageId}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {totalSent.toLocaleString()} total messages sent
+                              </p>
+                            </div>
+                            <Badge variant={successRate >= 95 ? "default" : "destructive"}>
+                              {successRate.toFixed(1)}% success
+                            </Badge>
+                          </div>
+                          
+                          {/* Messages breakdown */}
+                          <div className="space-y-2 ml-16">
+                            {pageStats
+                              .sort((a, b) => a.sequence_order - b.sequence_order)
+                              .map((msgStat) => (
+                                <div key={msgStat.message_sequence_id} className="border-l-2 border-primary/20 pl-4 py-2">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="text-xs">
+                                        Mensaje {msgStat.sequence_order}
+                                      </Badge>
+                                      <span className="text-sm text-muted-foreground">
+                                        {msgStat.message_type === 'text' ? '📝 Texto' : '🖼️ Imagen'}
+                                      </span>
+                                    </div>
+                                    <span className="text-sm font-medium">
+                                      {msgStat.total_sent.toLocaleString()} enviados
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="flex items-center justify-between p-2 rounded-md bg-green-500/10">
+                                      <span className="text-xs text-muted-foreground">Exitosos</span>
+                                      <span className="text-sm font-semibold text-green-600">
+                                        {msgStat.successful.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-2 rounded-md bg-red-500/10">
+                                      <span className="text-xs text-muted-foreground">Fallidos</span>
+                                      <span className="text-sm font-semibold text-red-600">
+                                        {msgStat.failed.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                })()}
+              </div>
             ) : (
+              // Non-sequence campaigns: Simple list
               <div className="space-y-4">
-                {fanpageStats
+                {(fanpageMessageStats as FanpageStats[])
                   .sort((a, b) => b.total_sent - a.total_sent)
                   .map((stats) => (
                     <div key={stats.page_id} className="border rounded-lg p-4">

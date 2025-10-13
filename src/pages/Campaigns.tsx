@@ -53,36 +53,11 @@ const Campaigns = () => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       
-      // For sequence campaigns, aggregate statistics from message_sequences
-      const enrichedCampaigns = await Promise.all((data || []).map(async (campaign) => {
-        if (campaign.is_sequence) {
-          const { data: sequences } = await supabase
-            .from("message_sequences")
-            .select("sent_count, delivered_count, failed_count")
-            .eq("campaign_id", campaign.id);
-          
-          if (sequences && sequences.length > 0) {
-            const totalSent = sequences.reduce((sum, seq) => sum + (seq.sent_count || 0), 0);
-            const totalDelivered = sequences.reduce((sum, seq) => sum + (seq.delivered_count || 0), 0);
-            const totalFailed = sequences.reduce((sum, seq) => sum + (seq.failed_count || 0), 0);
-            
-            return {
-              ...campaign,
-              processed: totalSent,
-              delivered: totalDelivered,
-              failed: totalFailed,
-              current_page_stats: campaign.current_page_stats as Campaign['current_page_stats']
-            };
-          }
-        }
-        
-        return {
-          ...campaign,
-          current_page_stats: campaign.current_page_stats as Campaign['current_page_stats']
-        };
-      }));
-      
-      return enrichedCampaigns as Campaign[];
+      // Use direct values from campaigns table (already updated by campaign-control)
+      return (data || []).map(campaign => ({
+        ...campaign,
+        current_page_stats: campaign.current_page_stats as Campaign['current_page_stats']
+      })) as Campaign[];
     },
     refetchInterval: 5000, // Real-time updates every 5s
   });
