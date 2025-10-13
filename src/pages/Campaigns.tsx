@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Play, Pause, BarChart3, Trash2, Edit, Copy, Trash } from "lucide-react";
+import { Plus, Play, Pause, BarChart3, Trash2, Edit, Copy, Trash, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -148,6 +148,19 @@ const Campaigns = () => {
     },
   });
 
+  const cleanupDatabaseMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.functions.invoke("cleanup-messages");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Limpieza iniciada. Los mensajes programados se están eliminando en background.");
+    },
+    onError: (error: Error) => {
+      toast.error("Error al iniciar limpieza: " + error.message);
+    },
+  });
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "running": return "bg-green-500";
@@ -198,6 +211,31 @@ const Campaigns = () => {
                 </AlertDialogContent>
               </AlertDialog>
             )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline">
+                  <Trash className="mr-2 h-4 w-4" />
+                  Limpiar DB
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Limpiar base de datos?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esto eliminará todos los mensajes programados pendientes y pausará las campañas en ejecución. Esta acción NO se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => cleanupDatabaseMutation.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Limpiar Ahora
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button 
               variant="outline"
               onClick={() => setShowBatchCardCreator(true)}
