@@ -50,7 +50,7 @@ const CampaignDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: campaign, isLoading: campaignLoading } = useQuery({
+  const { data: campaign, isLoading: campaignLoading, error: campaignError } = useQuery({
     queryKey: ["campaign", id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -61,10 +61,12 @@ const CampaignDetails = () => {
       if (error) throw error;
       return data as CampaignStats;
     },
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Cambiado de 5s a 30s
+    retry: 2,
+    staleTime: 10000,
   });
 
-  const { data: sequences = [] } = useQuery({
+  const { data: sequences = [], isLoading: sequencesLoading } = useQuery({
     queryKey: ["campaign-sequences", id],
     queryFn: async () => {
       if (!campaign?.is_sequence) return [];
@@ -79,14 +81,14 @@ const CampaignDetails = () => {
       return data;
     },
     enabled: !!campaign?.is_sequence,
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Cambiado de 5s a 30s
+    retry: 2,
   });
 
-  const { data: fanpageMessageStats = [], isLoading: statsLoading } = useQuery({
+  const { data: fanpageMessageStats = [], isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ["campaign-fanpage-message-stats", id],
     queryFn: async () => {
       if (!campaign?.is_sequence) {
-        // For non-sequence campaigns, use the original aggregation
         const { data: sendResults } = await supabase
           .from("send_results")
           .select("page_id, http_code")
@@ -130,7 +132,6 @@ const CampaignDetails = () => {
         return Object.values(grouped) as FanpageStats[];
       }
 
-      // For sequence campaigns, manually aggregate by page_id and message_sequence_id
       const { data: sendResults } = await supabase
         .from("send_results")
         .select("page_id, http_code, message_sequence_id")
@@ -138,7 +139,6 @@ const CampaignDetails = () => {
 
       if (!sendResults || sendResults.length === 0) return [];
 
-      // Group by page_id and message_sequence_id
       const grouped: Record<string, Record<string, any>> = {};
       sendResults.forEach((row: any) => {
         if (!grouped[row.page_id]) {
@@ -161,7 +161,6 @@ const CampaignDetails = () => {
         }
       });
 
-      // Flatten and enrich with fanpage and sequence details
       const flattened: FanpageMessageStats[] = [];
       for (const pageId of Object.keys(grouped)) {
         for (const msgSeqId of Object.keys(grouped[pageId])) {
@@ -169,7 +168,6 @@ const CampaignDetails = () => {
         }
       }
 
-      // Get fanpage details
       const pageIds = Object.keys(grouped);
       if (pageIds.length > 0) {
         const { data: fanpages } = await supabase
@@ -187,7 +185,6 @@ const CampaignDetails = () => {
         });
       }
 
-      // Get sequence details
       const seqIds = [...new Set(flattened.map(s => s.message_sequence_id))];
       if (seqIds.length > 0) {
         const { data: sequences } = await supabase
@@ -208,6 +205,9 @@ const CampaignDetails = () => {
       return flattened;
     },
     enabled: !!id && !!campaign,
+    refetchInterval: 30000,
+    retry: 2,
+    staleTime: 10000,
   });
 
   const getStatusColor = (status: string) => {

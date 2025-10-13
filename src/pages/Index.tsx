@@ -19,7 +19,7 @@ const Index = () => {
     checkAuth();
   }, [navigate]);
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading, error } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
       const [appsRes, accountsRes, fanpagesRes, campaignsRes] = await Promise.all([
@@ -44,12 +44,36 @@ const Index = () => {
         totalFailed,
       };
     },
-    refetchInterval: 5000,
+    refetchInterval: 30000, // Cambiado de 5s a 30s para reducir carga
+    retry: 2,
+    staleTime: 10000,
   });
 
   const deliveryRate = stats && (stats.totalDelivered + stats.totalFailed) > 0
     ? ((stats.totalDelivered / (stats.totalDelivered + stats.totalFailed)) * 100).toFixed(1)
     : "0";
+
+  if (error) {
+    return (
+      <AppLayout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">Multi-app Facebook Messenger broadcast system</p>
+          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center text-muted-foreground">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-yellow-500" />
+                <p>Error loading dashboard statistics. The database might be busy.</p>
+                <p className="text-sm mt-2">Please wait a moment and refresh the page.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
