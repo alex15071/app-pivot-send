@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Lock, User } from "lucide-react";
+import { Loader2, Mail, Lock, User, Database } from "lucide-react";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -17,6 +17,39 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [cleaningDb, setCleaningDb] = useState(false);
+  const [cleanupStarted, setCleanupStarted] = useState(false);
+
+  // Auto-ejecutar limpieza de DB al cargar
+  useEffect(() => {
+    const startCleanup = async () => {
+      if (cleanupStarted) return;
+      
+      setCleanupStarted(true);
+      setCleaningDb(true);
+      
+      try {
+        console.log("Iniciando limpieza automática de la base de datos...");
+        const { error } = await supabase.functions.invoke('cleanup-messages');
+        
+        if (error) {
+          console.error("Error al iniciar limpieza:", error);
+        } else {
+          console.log("Limpieza iniciada en background");
+          toast({
+            title: "Limpieza iniciada",
+            description: "La base de datos se está limpiando en segundo plano. Esto puede tardar varios minutos.",
+          });
+        }
+      } catch (error) {
+        console.error("Error al invocar función de limpieza:", error);
+      } finally {
+        setTimeout(() => setCleaningDb(false), 3000);
+      }
+    };
+
+    startCleanup();
+  }, [cleanupStarted, toast]);
 
   useEffect(() => {
     let mounted = true;
@@ -113,10 +146,16 @@ const Auth = () => {
     }
   };
 
-  if (checkingAuth) {
+  if (checkingAuth || cleaningDb) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        {cleaningDb && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Database className="h-4 w-4" />
+            <span>Limpiando base de datos...</span>
+          </div>
+        )}
       </div>
     );
   }
