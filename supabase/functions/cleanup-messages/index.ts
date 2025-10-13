@@ -16,97 +16,82 @@ Deno.serve(async (req) => {
 
   console.log('[cleanup] Starting cleanup process');
 
-  // Función de limpieza en background - optimizada para DB sobrecargada
+  // Ultra-aggressive cleanup - direct DELETE without SELECT
   async function performCleanup() {
     try {
-      let totalDeleted = 0;
-      const batchSize = 500; // Lotes más pequeños para evitar timeouts
-      const maxBatches = 200; // Más iteraciones pero más pequeñas
-      const delayBetweenBatches = 500; // Más tiempo entre lotes
+      console.log('[cleanup] Starting ULTRA-AGGRESSIVE cleanup - direct delete approach');
       
-      console.log('[cleanup] Starting aggressive cleanup with small batches');
+      // Paso 1: Pausar todas las campañas primero (con timeout corto)
+      console.log('[cleanup] Step 1: Pausing all campaigns');
+      try {
+        const { error: pauseError } = await supabase
+          .from('campaigns')
+          .update({ status: 'paused' })
+          .eq('status', 'running');
+        
+        if (pauseError) {
+          console.error('[cleanup] Could not pause campaigns:', pauseError.message);
+        } else {
+          console.log('[cleanup] Campaigns paused successfully');
+        }
+      } catch (e) {
+        console.error('[cleanup] Exception pausing campaigns:', e);
+      }
 
-      // Intentar eliminar mensajes directamente sin pausar campañas primero
-      // (pausar campañas está fallando por timeout)
+      // Paso 2: Intentar DELETE directo por bloques usando limit
+      // Esto es más rápido que SELECT + DELETE
+      console.log('[cleanup] Step 2: Starting direct delete operations');
+      
+      let totalDeleted = 0;
+      const batchSize = 100; // Lotes ULTRA pequeños
+      const maxBatches = 500; // Muchas más iteraciones
+      const delayMs = 300; // Delay corto entre lotes
+      
       for (let i = 0; i < maxBatches; i++) {
         try {
-          console.log(`[cleanup] Batch ${i + 1}/${maxBatches} - Attempting to delete up to ${batchSize} messages`);
+          console.log(`[cleanup] Direct delete batch ${i + 1}/${maxBatches}`);
           
-          // Intentar obtener y eliminar en una operación más simple
-          const { data: messages, error: selectError } = await supabase
+          // DELETE directo con límite - más eficiente que SELECT + DELETE
+          const { error, count } = await supabase
             .from('scheduled_messages')
-            .select('id')
+            .delete({ count: 'exact' })
             .eq('status', 'pending')
             .limit(batchSize);
 
-          if (selectError) {
-            console.error(`[cleanup] Error selecting batch ${i + 1}:`, selectError.message);
-            // Continuar intentando con el siguiente lote
-            await new Promise(resolve => setTimeout(resolve, delayBetweenBatches * 2));
+          if (error) {
+            console.error(`[cleanup] Batch ${i + 1} delete error:`, error.message);
+            await new Promise(resolve => setTimeout(resolve, delayMs * 3));
             continue;
           }
 
-          if (!messages || messages.length === 0) {
-            console.log('[cleanup] No more pending messages found');
+          const deleted = count || 0;
+          totalDeleted += deleted;
+          console.log(`[cleanup] Batch ${i + 1}: deleted ${deleted} messages. Total: ${totalDeleted}`);
+
+          // Si no eliminamos nada, terminamos
+          if (deleted === 0) {
+            console.log('[cleanup] No more messages to delete');
             break;
           }
 
-          // Eliminar este lote
-          const ids = messages.map(m => m.id);
-          const { error: deleteError } = await supabase
-            .from('scheduled_messages')
-            .delete()
-            .in('id', ids);
-
-          if (deleteError) {
-            console.error(`[cleanup] Error deleting batch ${i + 1}:`, deleteError.message);
-            // No romper, seguir intentando
-            await new Promise(resolve => setTimeout(resolve, delayBetweenBatches * 2));
-            continue;
+          // Si eliminamos menos del límite, casi terminamos
+          if (deleted < batchSize) {
+            console.log('[cleanup] Approaching end of pending messages');
           }
 
-          totalDeleted += messages.length;
-          console.log(`[cleanup] Batch ${i + 1} complete. Deleted: ${messages.length}. Total deleted: ${totalDeleted}`);
-
-          // Si eliminamos menos del límite, ya no hay más
-          if (messages.length < batchSize) {
-            console.log('[cleanup] Reached end of pending messages');
-            break;
-          }
-
-          // Pausa entre lotes para no sobrecargar la DB
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+          // Pausa entre lotes
+          await new Promise(resolve => setTimeout(resolve, delayMs));
           
         } catch (batchError) {
           console.error(`[cleanup] Exception in batch ${i + 1}:`, batchError);
-          // Continuar con el siguiente lote
-          await new Promise(resolve => setTimeout(resolve, delayBetweenBatches * 2));
+          await new Promise(resolve => setTimeout(resolve, delayMs * 3));
         }
       }
 
-      console.log(`[cleanup] Cleanup complete. Total messages deleted: ${totalDeleted}`);
-      
-      // Intentar pausar campañas al final si logramos limpiar algo
-      if (totalDeleted > 0) {
-        console.log('[cleanup] Attempting to pause campaigns after cleanup');
-        try {
-          const { error: pauseError } = await supabase
-            .from('campaigns')
-            .update({ status: 'paused' })
-            .eq('status', 'running');
-          
-          if (pauseError) {
-            console.error('[cleanup] Could not pause campaigns:', pauseError.message);
-          } else {
-            console.log('[cleanup] Campaigns paused successfully');
-          }
-        } catch (pauseException) {
-          console.error('[cleanup] Exception pausing campaigns:', pauseException);
-        }
-      }
+      console.log(`[cleanup] ✅ Cleanup finished. Total deleted: ${totalDeleted} messages`);
       
     } catch (error) {
-      console.error('[cleanup] Fatal error during cleanup:', error);
+      console.error('[cleanup] Fatal error:', error);
     }
   }
 
