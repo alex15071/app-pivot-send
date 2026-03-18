@@ -85,7 +85,7 @@ const Fanpages = () => {
   });
 
   // Subscribe to fanpage_conversations changes for real-time updates
-  useState(() => {
+  useEffect(() => {
     const channel = supabase
       .channel('fanpage_conversations_changes')
       .on(
@@ -105,7 +105,7 @@ const Fanpages = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  });
+  }, [refetch]);
 
   const syncConversationCountMutation = useMutation({
     mutationFn: async (pageId: string) => {
