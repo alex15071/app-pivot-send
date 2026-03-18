@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ImportConversationsDialog } from "@/components/fanpages/ImportConversationsDialog";
+import { ImportFanpagesByTokenDialog } from "@/components/fanpages/ImportFanpagesByTokenDialog";
 
 interface Fanpage {
   id: string;
