@@ -96,21 +96,15 @@ const Campaigns = () => {
 
   const deleteCampaignMutation = useMutation({
     mutationFn: async (campaignId: string) => {
-      // Delete campaign_fanpages first
-      await supabase.from("campaign_fanpages").delete().eq("campaign_id", campaignId);
-      
-      // Delete messages
-      await supabase.from("messages").delete().eq("campaign_id", campaignId);
-      
-      // Delete message_sequences
-      await supabase.from("message_sequences").delete().eq("campaign_id", campaignId);
-      
-      // Delete send_results
-      await supabase.from("send_results").delete().eq("campaign_id", campaignId);
-      
-      // Delete campaign
-      const { error } = await supabase.from("campaigns").delete().eq("id", campaignId);
+      const { data, error } = await supabase.functions.invoke("campaign-admin", {
+        body: {
+          action: "delete_campaign",
+          campaign_id: campaignId,
+        },
+      });
+
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
@@ -123,21 +117,12 @@ const Campaigns = () => {
 
   const deleteAllCampaignsMutation = useMutation({
     mutationFn: async () => {
-      // Get all campaign IDs
-      const { data: allCampaigns } = await supabase.from("campaigns").select("id");
-      if (!allCampaigns || allCampaigns.length === 0) return;
-      
-      const campaignIds = allCampaigns.map(c => c.id);
-      
-      // Delete all related data
-      await supabase.from("campaign_fanpages").delete().in("campaign_id", campaignIds);
-      await supabase.from("messages").delete().in("campaign_id", campaignIds);
-      await supabase.from("message_sequences").delete().in("campaign_id", campaignIds);
-      await supabase.from("send_results").delete().in("campaign_id", campaignIds);
-      
-      // Delete all campaigns
-      const { error } = await supabase.from("campaigns").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const { data, error } = await supabase.functions.invoke("campaign-admin", {
+        body: { action: "delete_all_campaigns" },
+      });
+
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });

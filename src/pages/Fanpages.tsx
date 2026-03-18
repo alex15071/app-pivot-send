@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ImportConversationsDialog } from "@/components/fanpages/ImportConversationsDialog";
+import { ImportFanpagesByTokenDialog } from "@/components/fanpages/ImportFanpagesByTokenDialog";
 
 interface Fanpage {
   id: string;
@@ -84,7 +85,7 @@ const Fanpages = () => {
   });
 
   // Subscribe to fanpage_conversations changes for real-time updates
-  useState(() => {
+  useEffect(() => {
     const channel = supabase
       .channel('fanpage_conversations_changes')
       .on(
@@ -104,7 +105,7 @@ const Fanpages = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  });
+  }, [refetch]);
 
   const syncConversationCountMutation = useMutation({
     mutationFn: async (pageId: string) => {
@@ -222,9 +223,12 @@ const Fanpages = () => {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Fanpages</h1>
-          <p className="text-muted-foreground">Manage your Facebook fanpages and harvest conversations</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Fanpages</h1>
+            <p className="text-muted-foreground">Manage your Facebook fanpages and harvest conversations</p>
+          </div>
+          <ImportFanpagesByTokenDialog onImportComplete={() => refetch()} />
         </div>
 
         {isLoading ? (
