@@ -223,9 +223,12 @@ const Fanpages = () => {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Fanpages</h1>
-          <p className="text-muted-foreground">Manage your Facebook fanpages and harvest conversations</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Fanpages</h1>
+            <p className="text-muted-foreground">Manage your Facebook fanpages and harvest conversations</p>
+          </div>
+          <ImportFanpagesByTokenDialog onImportComplete={() => refetch()} />
         </div>
 
         {isLoading ? (
