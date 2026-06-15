@@ -64,11 +64,6 @@ export const ImportFanpagesByTokenDialog = ({
   }, [apps, selectedApp]);
 
   const handleImport = async () => {
-    if (!selectedApp) {
-      toast.error("Selecciona una app");
-      return;
-    }
-
     if (!userToken.trim()) {
       toast.error("Pega un token de usuario válido");
       return;
@@ -79,7 +74,7 @@ export const ImportFanpagesByTokenDialog = ({
 
       const { data, error } = await supabase.functions.invoke("import-fanpages-token", {
         body: {
-          app_key: selectedApp,
+          ...(selectedApp ? { app_key: selectedApp } : {}),
           user_token: userToken.trim(),
         },
       });
