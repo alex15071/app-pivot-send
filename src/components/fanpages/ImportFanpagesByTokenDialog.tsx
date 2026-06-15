@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -110,10 +110,10 @@ export const ImportFanpagesByTokenDialog = ({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="import-app-key">App</Label>
+            <Label htmlFor="import-app-key">App (opcional)</Label>
             <Select value={selectedApp} onValueChange={setSelectedApp} disabled={loadingApps || apps.length === 0}>
               <SelectTrigger id="import-app-key">
-                <SelectValue placeholder={loadingApps ? "Cargando apps..." : "Selecciona una app"} />
+                <SelectValue placeholder={loadingApps ? "Cargando apps..." : "Sin app (solo token)"} />
               </SelectTrigger>
               <SelectContent>
                 {apps.map((app) => (
@@ -123,7 +123,11 @@ export const ImportFanpagesByTokenDialog = ({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Si no eliges una app, se usará la app por defecto (o se creará una automáticamente).
+            </p>
           </div>
+
 
           <div className="space-y-2">
             <Label htmlFor="fb-user-token">Token de usuario</Label>
@@ -144,7 +148,7 @@ export const ImportFanpagesByTokenDialog = ({
           </Button>
           <Button
             onClick={handleImport}
-            disabled={importing || !selectedApp || !userToken.trim() || apps.length === 0}
+            disabled={importing || !userToken.trim()}
           >
             {importing ? (
               <>
