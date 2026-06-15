@@ -56,12 +56,6 @@ export const ImportFanpagesByTokenDialog = ({
     },
   });
 
-  useEffect(() => {
-    if (!selectedApp && apps.length > 0) {
-      const defaultApp = apps.find((app) => app.is_default);
-      setSelectedApp(defaultApp?.key || apps[0].key);
-    }
-  }, [apps, selectedApp]);
 
   const handleImport = async () => {
     if (!userToken.trim()) {
