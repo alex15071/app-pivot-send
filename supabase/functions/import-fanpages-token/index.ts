@@ -56,12 +56,8 @@ serve(async (req) => {
     }
 
     const { app_key, user_token } = await req.json();
-    const appKey = typeof app_key === "string" ? app_key.trim() : "";
+    let appKey = typeof app_key === "string" ? app_key.trim() : "";
     const userToken = typeof user_token === "string" ? user_token.trim() : "";
-
-    if (!appKey) {
-      return jsonResponse({ error: "app_key is required" }, 400);
-    }
 
     if (!userToken) {
       return jsonResponse({ error: "user_token is required" }, 400);
@@ -69,18 +65,54 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-    const { data: app, error: appError } = await supabaseAdmin
-      .from("apps")
-      .select("key")
-      .eq("key", appKey)
-      .maybeSingle();
+    if (appKey) {
+      // Verify the selected app exists
+      const { data: app, error: appError } = await supabaseAdmin
+        .from("apps")
+        .select("key")
+        .eq("key", appKey)
+        .maybeSingle();
 
-    if (appError) {
-      throw new Error(appError.message);
-    }
+      if (appError) {
+        throw new Error(appError.message);
+      }
 
-    if (!app) {
-      return jsonResponse({ error: "La app seleccionada no existe" }, 404);
+      if (!app) {
+        return jsonResponse({ error: "La app seleccionada no existe" }, 404);
+      }
+    } else {
+      // No app selected: use the default app, or any app, or auto-create a token-only app
+      const { data: defaultApp } = await supabaseAdmin
+        .from("apps")
+        .select("key")
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (defaultApp?.key) {
+        appKey = defaultApp.key;
+      } else {
+        const fallbackKey = "TOKEN";
+        const { error: createAppError } = await supabaseAdmin
+          .from("apps")
+          .upsert(
+            {
+              key: fallbackKey,
+              name: "Token import",
+              fb_app_id: "token",
+              fb_app_secret_encrypted: "",
+              is_default: true,
+            },
+            { onConflict: "key", ignoreDuplicates: true }
+          );
+
+        if (createAppError) {
+          throw new Error(createAppError.message);
+        }
+
+        appKey = fallbackKey;
+      }
     }
 
     const encodedToken = encodeURIComponent(userToken);
